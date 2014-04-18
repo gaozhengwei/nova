@@ -506,13 +506,12 @@ class API(base.Base):
         # NOTE(geekinutah): It would be nice if use_slave had us call
         #                   special APIs that pummeled slaves instead of
         #                   the master. For now we just ignore this arg.
-        with lockutils.lock('refresh_cache-%s' % instance['uuid']):
-            result = self._get_instance_nw_info(context, instance, networks,
-                                                port_ids)
-            update_instance_info_cache(self, context,
-                                       instance,
-                                       nw_info=result,
-                                       update_cells=False)
+        result = self._get_instance_nw_info(context, instance, networks,
+                                            port_ids)
+        update_instance_info_cache(self, context,
+                                   instance,
+                                   nw_info=result,
+                                   update_cells=False)
         return result
 
     def _get_instance_nw_info(self, context, instance, networks=None,
