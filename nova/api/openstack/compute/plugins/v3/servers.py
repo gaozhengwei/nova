@@ -526,6 +526,7 @@ class ServersController(wsgi.Controller):
                 exception.MultiplePortsNotApplicable,
                 exception.InstanceUserDataMalformed,
                 exception.PortNotFound,
+                exception.FixedIpAlreadyInUse,
                 exception.SecurityGroupNotFound,
                 exception.PortRequiresFixedIP,
                 exception.NetworkRequiresSubnet,
