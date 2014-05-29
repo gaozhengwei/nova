@@ -133,6 +133,21 @@ class ConductorAPI(object):
     ...  - Remove block_device_mapping_destroy()
 
     2.0  - Drop backwards compatibility
+    ...  - Remove quota_rollback() and quota_commit()
+    ...  - Remove aggregate_host_add() and aggregate_host_delete()
+    ...  - Remove network_migrate_instance_start() and
+           network_migrate_instance_finish()
+
+        ... Icehouse supports message version 2.0.  So, any changes to
+        existing methods in 2.x after that point should be done such that they
+        can handle the version_cap being set to 2.0.
+    ...  - Remove instance_destroy()
+    ...  - Remove compute_unrescue()
+    ...  - Remove instance_get_all_by_filters()
+    ...  - Remove instance_get_active_by_window_joined()
+    ...  - Remove instance_fault_create()
+    ...  - Remove action_event_start() and action_event_finish()
+    ...  - Remove instance_get_by_uuid()
     """
 
     VERSION_ALIASES = {
@@ -159,13 +174,6 @@ class ConductorAPI(object):
                           instance_uuid=instance_uuid,
                           updates=updates_p,
                           service=service)
-
-    def instance_get_by_uuid(self, context, instance_uuid,
-                             columns_to_join=None):
-        kwargs = {'instance_uuid': instance_uuid,
-                  'columns_to_join': columns_to_join}
-        cctxt = self.client.prepare()
-        return cctxt.call(context, 'instance_get_by_uuid', **kwargs)
 
     def migration_get_in_progress_by_host_and_node(self, context,
                                                    host, node):

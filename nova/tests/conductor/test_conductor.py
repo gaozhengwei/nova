@@ -150,46 +150,6 @@ class _BaseTestCase(object):
             self.context, 'fake-host', 'fake-node')
         self.assertEqual(result, 'fake-result')
 
-    def test_instance_get_by_uuid(self):
-        orig_instance = self._create_fake_instance()
-        copy_instance = self.conductor.instance_get_by_uuid(
-            self.context, orig_instance['uuid'])
-        self.assertEqual(orig_instance['name'],
-                         copy_instance['name'])
-
-    def _setup_aggregate_with_host(self):
-        aggregate_ref = db.aggregate_create(self.context.elevated(),
-                {'name': 'foo'}, metadata={'availability_zone': 'foo'})
-
-        self.conductor.aggregate_host_add(self.context, aggregate_ref, 'bar')
-
-        aggregate_ref = db.aggregate_get(self.context.elevated(),
-                                         aggregate_ref['id'])
-
-        return aggregate_ref
-
-    def test_aggregate_host_add(self):
-        aggregate_ref = self._setup_aggregate_with_host()
-
-        self.assertTrue(any([host == 'bar'
-                             for host in aggregate_ref['hosts']]))
-
-        db.aggregate_delete(self.context.elevated(), aggregate_ref['id'])
-
-    def test_aggregate_host_delete(self):
-        aggregate_ref = self._setup_aggregate_with_host()
-
-        self.conductor.aggregate_host_delete(self.context, aggregate_ref,
-                'bar')
-
-        aggregate_ref = db.aggregate_get(self.context.elevated(),
-                aggregate_ref['id'])
-
-        self.assertFalse(any([host == 'bar'
-                              for host in aggregate_ref['hosts']]))
-
-        db.aggregate_delete(self.context.elevated(), aggregate_ref['id'])
-
     def test_aggregate_metadata_get_by_host(self):
         self.mox.StubOutWithMock(db, 'aggregate_metadata_get_by_host')
         db.aggregate_metadata_get_by_host(self.context, 'host',
@@ -528,6 +488,13 @@ class ConductorTestCase(_BaseTestCase, test.TestCase):
         super(ConductorTestCase, self).setUp()
         self.conductor = conductor_manager.ConductorManager()
         self.conductor_manager = self.conductor
+
+    def test_instance_get_by_uuid(self):
+        orig_instance = self._create_fake_instance()
+        copy_instance = self.conductor.instance_get_by_uuid(
+            self.context, orig_instance['uuid'])
+        self.assertEqual(orig_instance['name'],
+                         copy_instance['name'])
 
     def test_instance_info_cache_update(self):
         fake_values = {'key1': 'val1', 'key2': 'val2'}
