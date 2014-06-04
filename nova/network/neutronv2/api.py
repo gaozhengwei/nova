@@ -519,7 +519,7 @@ class API(base.Base):
         # NOTE(danms): This is an inner method intended to be called
         # by other code that updates instance nwinfo. It *must* be
         # called with the refresh_cache-%(instance_uuid) lock held!
-        LOG.debug(_('get_instance_nw_info() for %s'), instance['display_name'])
+        LOG.debug('get_instance_nw_info()', instance=instance)
         nw_info = self._build_network_info_model(context, instance, networks,
                                                  port_ids)
         return network_model.NetworkInfo.hydrate(nw_info)
