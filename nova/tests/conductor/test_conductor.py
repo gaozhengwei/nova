@@ -905,11 +905,209 @@ class ConductorTestCase(_BaseTestCase, test.TestCase):
         errors = (exc.InstanceActionNotFound(request_id='1',
                                              instance_uuid='2'),
                   exc.InstanceActionEventNotFound(event='1', action_id='2'))
-        for error in errors:
-            self._test_action_event_expected_exceptions(
-                'action_event_finish', self.conductor.action_event_finish,
-                error)
+        self._test_expected_exceptions(
+            'action_event_finish', self.conductor.action_event_finish,
+            errors, {'foo': 'bar'})
 
+    def test_instance_update_expected_exceptions(self):
+        errors = (exc.InvalidUUID(uuid='foo'),
+                  exc.InstanceNotFound(instance_id=1),
+                  exc.UnexpectedTaskStateError(expected='foo',
+                                               actual='bar'))
+        self._test_expected_exceptions(
+            'instance_update', self.conductor.instance_update,
+            errors, None, {'foo': 'bar'})
+
+    def test_instance_get_expected_exceptions(self):
+        error = exc.InstanceNotFound(instance_id=1)
+        self._test_expected_exceptions(
+            'instance_get', self.conductor.instance_get,
+            [error], None)
+
+    def test_instance_get_by_uuid_expected_exceptions(self):
+        error = exc.InstanceNotFound(instance_id=1)
+        self._test_expected_exceptions(
+            'instance_get_by_uuid', self.conductor.instance_get_by_uuid,
+            [error], None)
+
+    def test_migration_get_expected_exceptions(self):
+        error = exc.MigrationNotFound(migration_id=1)
+        self._test_expected_exceptions(
+            'migration_get', self.conductor.migration_get,
+            [error], None)
+
+    def test_migration_update_expected_exceptions(self):
+        error = exc.MigrationNotFound(migration_id=1)
+        self._test_expected_exceptions(
+            'migration_update', self.conductor.migration_update,
+            [error], {'id': 1}, None)
+
+    def test_aggregate_host_add_expected_exceptions(self):
+        error = exc.AggregateHostExists(aggregate_id=1, host='foo')
+        self._test_expected_exceptions(
+            'aggregate_host_add', self.conductor.aggregate_host_add,
+            [error], {'id': 1}, None)
+
+    def test_aggregate_host_delete_expected_exceptions(self):
+        error = exc.AggregateHostNotFound(aggregate_id=1, host='foo')
+        self._test_expected_exceptions(
+            'aggregate_host_delete', self.conductor.aggregate_host_delete,
+            [error], {'id': 1}, None)
+
+    def test_aggregate_get_expected_exceptions(self):
+        error = exc.AggregateNotFound(aggregate_id=1)
+        self._test_expected_exceptions(
+            'aggregate_get', self.conductor.aggregate_get,
+            [error], None)
+
+    def test_aggregate_metadata_delete_expected_exceptions(self):
+        error = exc.AggregateMetadataNotFound(aggregate_id=1,
+                                              metadata_key='foo')
+        self._test_expected_exceptions(
+            'aggregate_metadata_delete',
+            self.conductor.aggregate_metadata_delete,
+            [error], {'id': 1}, None)
+
+    def test_service_update_expected_exceptions(self):
+        error = exc.ServiceNotFound(service_id=1)
+        self._test_expected_exceptions(
+            'service_update',
+            self.conductor.service_update,
+            [error], {'id': 1}, None)
+
+    def test_service_destroy_expected_exceptions(self):
+        error = exc.ServiceNotFound(service_id=1)
+        self._test_expected_exceptions(
+            'service_destroy',
+            self.conductor.service_destroy,
+            [error], 1)
+
+    def _setup_aggregate_with_host(self):
+        aggregate_ref = db.aggregate_create(self.context.elevated(),
+                {'name': 'foo'}, metadata={'availability_zone': 'foo'})
+
+        self.conductor.aggregate_host_add(self.context, aggregate_ref, 'bar')
+
+        aggregate_ref = db.aggregate_get(self.context.elevated(),
+                                         aggregate_ref['id'])
+
+        return aggregate_ref
+
+    def test_aggregate_host_add(self):
+        aggregate_ref = self._setup_aggregate_with_host()
+
+        self.assertIn('bar', aggregate_ref['hosts'])
+
+        db.aggregate_delete(self.context.elevated(), aggregate_ref['id'])
+
+    def test_aggregate_host_delete(self):
+        aggregate_ref = self._setup_aggregate_with_host()
+
+        self.conductor.aggregate_host_delete(self.context, aggregate_ref,
+                'bar')
+
+        aggregate_ref = db.aggregate_get(self.context.elevated(),
+                aggregate_ref['id'])
+
+        self.assertNotIn('bar', aggregate_ref['hosts'])
+
+        db.aggregate_delete(self.context.elevated(), aggregate_ref['id'])
+
+    def test_network_migrate_instance_start(self):
+        self.mox.StubOutWithMock(self.conductor_manager.network_api,
+                                 'migrate_instance_start')
+        self.conductor_manager.network_api.migrate_instance_start(self.context,
+                                                                  'instance',
+                                                                  'migration')
+        self.mox.ReplayAll()
+        self.conductor.network_migrate_instance_start(self.context,
+                                                      'instance',
+                                                      'migration')
+
+    def test_network_migrate_instance_finish(self):
+        self.mox.StubOutWithMock(self.conductor_manager.network_api,
+                                 'migrate_instance_finish')
+        self.conductor_manager.network_api.migrate_instance_finish(
+            self.context, 'instance', 'migration')
+        self.mox.ReplayAll()
+        self.conductor.network_migrate_instance_finish(self.context,
+                                                       'instance',
+                                                       'migration')
+
+    def test_instance_destroy(self):
+        self.mox.StubOutWithMock(db, 'instance_destroy')
+        db.instance_destroy(self.context, 'fake-uuid').AndReturn('fake-result')
+        self.mox.ReplayAll()
+        result = self.conductor.instance_destroy(self.context,
+                                                 {'uuid': 'fake-uuid'})
+        self.assertEqual(result, 'fake-result')
+
+    def test_compute_unrescue(self):
+        self.mox.StubOutWithMock(self.conductor_manager.compute_api,
+                                 'unrescue')
+        self.conductor_manager.compute_api.unrescue(self.context, 'instance')
+        self.mox.ReplayAll()
+        self.conductor.compute_unrescue(self.context, 'instance')
+
+    def test_instance_get_all_by_filters(self):
+        filters = {'foo': 'bar'}
+        self.mox.StubOutWithMock(db, 'instance_get_all_by_filters')
+        db.instance_get_all_by_filters(self.context, filters,
+                                       'fake-key', 'fake-sort',
+                                       columns_to_join=None, use_slave=False)
+        self.mox.ReplayAll()
+        self.conductor.instance_get_all_by_filters(self.context, filters,
+                                                   'fake-key', 'fake-sort')
+
+    def test_instance_get_all_by_filters_use_slave(self):
+        filters = {'foo': 'bar'}
+        self.mox.StubOutWithMock(db, 'instance_get_all_by_filters')
+        db.instance_get_all_by_filters(self.context, filters,
+                                       'fake-key', 'fake-sort',
+                                       columns_to_join=None, use_slave=True)
+        self.mox.ReplayAll()
+        self.conductor.instance_get_all_by_filters(self.context, filters,
+                                                   'fake-key', 'fake-sort',
+                                                   use_slave=True)
+
+    def test_instance_get_active_by_window_joined(self):
+        self.mox.StubOutWithMock(db, 'instance_get_active_by_window_joined')
+        db.instance_get_active_by_window_joined(self.context, 'fake-begin',
+                                                'fake-end', 'fake-proj',
+                                                'fake-host')
+        self.mox.ReplayAll()
+        self.conductor.instance_get_active_by_window_joined(
+            self.context, 'fake-begin', 'fake-end', 'fake-proj', 'fake-host')
+
+    def test_instance_fault_create(self):
+        self.mox.StubOutWithMock(db, 'instance_fault_create')
+        db.instance_fault_create(self.context, 'fake-values').AndReturn(
+            'fake-result')
+        self.mox.ReplayAll()
+        result = self.conductor.instance_fault_create(self.context,
+                                                      'fake-values')
+        self.assertEqual(result, 'fake-result')
+
+    def test_action_event_start(self):
+        self.mox.StubOutWithMock(db, 'action_event_start')
+        db.action_event_start(self.context, mox.IgnoreArg())
+        self.mox.ReplayAll()
+        self.conductor.action_event_start(self.context, {})
+
+    def test_action_event_finish(self):
+        self.mox.StubOutWithMock(db, 'action_event_finish')
+        db.action_event_finish(self.context, mox.IgnoreArg())
+        self.mox.ReplayAll()
+        self.conductor.action_event_finish(self.context, {})
+
+    def _test_expected_exceptions(self, db_method, conductor_method, errors,
+                                  *args, **kwargs):
+        # Tests that expected exceptions are handled properly.
+        for error in errors:
+            with mock.patch.object(db, db_method, side_effect=error):
+                self.assertRaises(messaging.ExpectedException,
+                                  conductor_method,
+                                  self.context, *args, **kwargs)
 
 class ConductorRPCAPITestCase(_BaseTestCase, test.TestCase):
     """Conductor RPC API Tests."""
