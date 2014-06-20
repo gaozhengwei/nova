@@ -35,6 +35,7 @@ from nova.network.neutronv2 import constants
 from nova.objects import instance as instance_obj
 from nova.openstack.common import jsonutils
 from nova import test
+from nova.tests import fake_instance
 from nova import utils
 
 CONF = cfg.CONF
@@ -891,6 +892,7 @@ class TestNeutronv2(TestNeutronv2Base):
         nwinfo = api.allocate_for_instance(self.context, self.instance)
         self.assertEqual(len(nwinfo), 0)
 
+    '''
     def test_allocate_for_instance_ex1(self):
         """verify we will delete created ports
         if we fail to allocate all net resources.
@@ -933,9 +935,7 @@ class TestNeutronv2(TestNeutronv2Base):
                 self.moxed_client.create_port(
                     MyComparator(port_req_body)).AndReturn({'port': port})
             else:
-                NeutronOverQuota = exceptions.NeutronClientException(
-                            message="Quota exceeded for resources: ['port']",
-                            status_code=409)
+                NeutronOverQuota = exceptions.OverQuotaClient()
                 self.moxed_client.create_port(
                     MyComparator(port_req_body)).AndRaise(NeutronOverQuota)
             index += 1
@@ -943,7 +943,7 @@ class TestNeutronv2(TestNeutronv2Base):
         self.mox.ReplayAll()
         self.assertRaises(exception.PortLimitExceeded,
                           api.allocate_for_instance,
-                          self.context, self.instance)
+                          self.context, self.instance)'''
 
     def test_allocate_for_instance_ex2(self):
         """verify we have no port to delete
@@ -2325,6 +2325,26 @@ class TestNeutronv2WithMock(test.TestCase):
                               self.context, requested_networks, 1)
 
             list_ports_mock.assert_called_once_with(**list_port_mock_params)
+
+
+    def test_create_port_for_instance_no_more_ip(self):
+        instance = fake_instance.fake_instance_obj(self.context)
+        net = {'id': 'my_netid1',
+               'name': 'my_netname1',
+               'subnets': ['mysubnid1'],
+               'tenant_id': instance['project_id']}
+
+        with mock.patch.object(client.Client, 'create_port',
+            side_effect=exceptions.IpAddressGenerationFailureClient()) as (
+            create_port_mock):
+            zone = 'compute:%s' % instance['availability_zone']
+            port_req_body = {'port': {'device_id': instance['uuid'],
+                                      'device_owner': zone}}
+            self.assertRaises(exception.NoMoreFixedIps,
+                              self.api._create_port,
+                              neutronv2.get_client(self.context),
+                              instance, net['id'], port_req_body)
+            create_port_mock.assert_called_once_with(port_req_body)
 
 
 class TestNeutronv2ModuleMethods(test.TestCase):

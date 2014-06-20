@@ -4005,8 +4005,8 @@ class SecurityGroupAPI(base.Base, security_group_base.SecurityGroupBase):
         if detailed:
             return self.db.security_group_get_by_instance(context,
                                                           instance_uuid)
-        instance = objects.Instance(uuid=instance_uuid)
-        groups = objects.SecurityGroupList.get_by_instance(context, instance)
+        instance = instance_obj.Instance(uuid=instance_uuid)
+        groups = security_group_obj.SecurityGroupList.get_by_instance(context, instance)
         return [{'name': group.name} for group in groups]
 
     def populate_security_groups(self, instance, security_groups):

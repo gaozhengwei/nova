@@ -62,7 +62,7 @@ def handle_password(req, meta_data):
             msg = _("Request is too large.")
             raise exc.HTTPBadRequest(explanation=msg)
 
-        instance = objects.Instance.get_by_uuid(ctxt, meta_data.uuid)
+        instance = objects.instance.Instance.get_by_uuid(ctxt, meta_data.uuid)
         instance.system_metadata.update(convert_password(ctxt, req.body))
         instance.save()
     else:

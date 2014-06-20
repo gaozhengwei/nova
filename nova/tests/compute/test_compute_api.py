@@ -38,6 +38,7 @@ from nova.objects import instance as instance_obj
 from nova.objects import instance_info_cache
 from nova.objects import migration as migration_obj
 from nova.objects import quotas as quotas_obj
+from nova.objects import security_group as security_group_obj
 from nova.objects import service as service_obj
 from nova.openstack.common import timeutils
 from nova.openstack.common import uuidutils
@@ -2052,9 +2053,9 @@ class SecurityGroupAPITest(test.NoDBTestCase):
     @mock.patch('nova.objects.security_group.SecurityGroupList.'
                 'get_by_instance')
     def test_get_instance_security_groups(self, mock_get):
-        groups = objects.SecurityGroupList()
-        groups.objects = [objects.SecurityGroup(name='foo'),
-                          objects.SecurityGroup(name='bar')]
+        groups = security_group_obj.SecurityGroupList()
+        groups.objects = [security_group_obj.SecurityGroup(name='foo'),
+                          security_group_obj.SecurityGroup(name='bar')]
         mock_get.return_value = groups
         names = self.secgroup_api.get_instance_security_groups(self.context,
                                                                'fake-uuid')

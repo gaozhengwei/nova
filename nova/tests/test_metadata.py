@@ -786,7 +786,7 @@ class MetadataPasswordTestCase(test.TestCase):
         self.assertRaises(webob.exc.HTTPBadRequest,
                           password.handle_password, request, self.mdinst)
 
-    @mock.patch('nova.objects.Instance.get_by_uuid')
+    @mock.patch('nova.objects.instance.Instance.get_by_uuid')
     def _try_set_password(self, get_by_uuid, val='bar'):
         request = webob.Request.blank('')
         request.method = 'POST'
