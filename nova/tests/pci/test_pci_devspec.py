@@ -95,7 +95,7 @@ class PciAddressTestCase(test.NoDBTestCase):
                "phys_function": "0000:0a:00.0"}
         self.assertTrue(pci.match(dev))
 
-    @mock.patch('nova.pci.pci_utils.is_physical_function', return_value = True)
+    @mock.patch('nova.pci.pci_utils.is_physical_function', return_value=True)
     def test_address_is_pf(self, mock_is_physical_function):
         pci_info = '{"address":"0000:0a:00.0", "physical_network":"hr_net"}'
         pci = pci_devspec.PciDeviceSpec(pci_info)
@@ -147,14 +147,14 @@ class PciDevSpecTestCase(test.NoDBTestCase):
                           pci_devspec.PciDeviceSpec, pci_info)
 
     @mock.patch('nova.pci.pci_utils.get_function_by_ifname',
-        return_value = ("0000:0a:00.0", True))
+        return_value=("0000:0a:00.0", True))
     def test_by_name(self, mock_get_function_by_ifname):
         pci_info = '{"devname": "eth0", "physical_network": "hr_net"}'
         pci = pci_devspec.PciDeviceSpec(pci_info)
         self.assertTrue(pci.match(dev))
 
     @mock.patch('nova.pci.pci_utils.get_function_by_ifname',
-        return_value = (None, False))
+        return_value=(None, False))
     def test_invalid_name(self, mock_get_function_by_ifname):
         pci_info = '{"devname": "lo", "physical_network": "hr_net"}'
         exc = self.assertRaises(exception.PciDeviceNotFoundById,

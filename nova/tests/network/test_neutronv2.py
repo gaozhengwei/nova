@@ -32,11 +32,8 @@ from nova.network import model
 from nova.network import neutronv2
 from nova.network.neutronv2 import api as neutronapi
 from nova.network.neutronv2 import constants
-from nova.objects import instance as instance_obj
 from nova.objects import network_request as net_req_obj
 from nova.openstack.common import jsonutils
-from nova.openstack.common import policy as common_policy
-from nova import policy
 from nova import test
 from nova.tests import fake_instance
 from nova import utils
@@ -866,7 +863,7 @@ class TestNeutronv2(TestNeutronv2Base):
         # first in requested_networks so that if the code were to not pre-check
         # requested ports, it would incorrectly assign the mac and not fail.
         requested_networks = net_req_obj.NetworkRequestList(
-            objects = [
+            objects=[
                 net_req_obj.NetworkRequest(network_id=self.nets2[1]['id']),
                 net_req_obj.NetworkRequest(port_id='my_portid1')])
         api = self._stub_allocate_for_instance(
@@ -885,8 +882,9 @@ class TestNeutronv2(TestNeutronv2Base):
         # allocate_for_instance tracks used macs properly, so we pass in one
         # mac, and ask for two networks.
         requested_networks = net_req_obj.NetworkRequestList(
-            objects=[net_req_obj.NetworkRequest(network_id=self.nets2[1]['id']),
-                     net_req_obj.NetworkRequest(network_id=self.nets2[0]['id'])])
+            objects=[net_req_obj.NetworkRequest(
+                network_id=self.nets2[1]['id']),
+                net_req_obj.NetworkRequest(network_id=self.nets2[0]['id'])])
         api = self._stub_allocate_for_instance(
             net_idx=2, requested_networks=requested_networks,
             macs=set(['my_mac2']),
@@ -900,8 +898,9 @@ class TestNeutronv2(TestNeutronv2Base):
         # If two MACs are available and two networks requested, two new ports
         # get made and no exceptions raised.
         requested_networks = net_req_obj.NetworkRequestList(
-            objects=[net_req_obj.NetworkRequest(network_id=self.nets2[1]['id']),
-                     net_req_obj.NetworkRequest(network_id=self.nets2[0]['id'])])
+            objects=[
+                net_req_obj.NetworkRequest(network_id=self.nets2[1]['id']),
+                net_req_obj.NetworkRequest(network_id=self.nets2[0]['id'])])
         self._allocate_for_instance(
             net_idx=2, requested_networks=requested_networks,
             macs=set(['my_mac2', 'my_mac1']))
@@ -1365,10 +1364,11 @@ class TestNeutronv2(TestNeutronv2Base):
         # specify a combo net_idx=7 : net2, port in net1, net2, port in net1
         self.flags(allow_duplicate_networks=True, group='neutron')
         requested_networks = net_req_obj.NetworkRequestList(
-            objects=[net_req_obj.NetworkRequest(network_id='my_netid2'),
-                     net_req_obj.NetworkRequest(port_id=self.port_data1[0]['id']),
-                     net_req_obj.NetworkRequest(network_id='my_netid2'),
-                     net_req_obj.NetworkRequest(port_id=self.port_data3[0]['id'])])
+            objects=[
+                net_req_obj.NetworkRequest(network_id='my_netid2'),
+                net_req_obj.NetworkRequest(port_id=self.port_data1[0]['id']),
+                net_req_obj.NetworkRequest(network_id='my_netid2'),
+                net_req_obj.NetworkRequest(port_id=self.port_data3[0]['id'])])
         self._allocate_for_instance(net_idx=7,
                                     requested_networks=requested_networks)
 
@@ -1431,7 +1431,8 @@ class TestNeutronv2(TestNeutronv2Base):
 
     def test_validate_networks_port_in_use(self):
         requested_networks = net_req_obj.NetworkRequestList(
-            objects=[net_req_obj.NetworkRequest(port_id=self.port_data3[0]['id'])])
+            objects=[net_req_obj.NetworkRequest(
+            port_id=self.port_data3[0]['id'])])
         self.moxed_client.show_port(self.port_data3[0]['id']).\
             AndReturn({'port': self.port_data3[0]})
 
@@ -2522,7 +2523,6 @@ class TestNeutronv2WithMock(test.TestCase):
                               self.context, requested_networks, 1)
 
             list_ports_mock.assert_called_once_with(**list_port_mock_params)
-
 
     def test_create_port_for_instance_no_more_ip(self):
         instance = fake_instance.fake_instance_obj(self.context)

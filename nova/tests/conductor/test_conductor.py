@@ -1109,6 +1109,7 @@ class ConductorTestCase(_BaseTestCase, test.TestCase):
                                   conductor_method,
                                   self.context, *args, **kwargs)
 
+
 class ConductorRPCAPITestCase(_BaseTestCase, test.TestCase):
     """Conductor RPC API Tests."""
     def setUp(self):

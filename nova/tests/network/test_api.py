@@ -30,8 +30,8 @@ from nova.network import base_api
 from nova.network import floating_ips
 from nova.network import model as network_model
 from nova.network import rpcapi as network_rpcapi
-from nova.objects import fixed_ip as fixed_ip_obj
 from nova.objects import fields
+from nova.objects import fixed_ip as fixed_ip_obj
 from nova import policy
 from nova import test
 from nova.tests.objects import test_fixed_ip

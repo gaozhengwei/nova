@@ -39,7 +39,7 @@ def get_pci_dev_info(pci_obj, property, max, hex_value):
     v = get_value(a)
     if v > max:
         raise exception.PciConfigInvalidWhitelist(
-            reason = "invalid %s %s" % (property, a))
+            reason="invalid %s %s" % (property, a))
     setattr(pci_obj, property, hex_value % v)
 
 

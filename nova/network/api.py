@@ -29,7 +29,6 @@ from nova.network import rpcapi as network_rpcapi
 from nova.objects import fixed_ip as fixed_ip_obj
 from nova.objects import instance as instance_obj
 from nova.openstack.common.gettextutils import _
-from nova.openstack.common import lockutils
 from nova.openstack.common import log as logging
 from nova import policy
 from nova import utils
