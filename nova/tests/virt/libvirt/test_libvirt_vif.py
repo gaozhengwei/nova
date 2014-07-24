@@ -299,7 +299,7 @@ class LibvirtVifTestCase(test.TestCase):
         default_inst_type['extra_specs'] = dict(extra_specs + quota_bandwidth)
         conf = self._get_conf()
         nic = driver.get_config(self.instance, vif, image_meta,
-                                default_inst_type)
+                                default_inst_type, CONF.libvirt.virt_type)
         conf.add_device(nic)
         return conf.to_xml()
 
@@ -483,10 +483,10 @@ class LibvirtVifTestCase(test.TestCase):
         self.flags(firewall_driver="nova.virt.firewall.NoopFirewallDriver")
         xml = self._get_instance_xml(d, vif)
         node = self._get_node(xml)
-        self._assertTypeAndMacEquals(node, "ethernet", "target", "dev",
+        self._assertTypeAndMacEquals(node, "bridge", "target", "dev",
                                      self.vif_ovs, prefix=dev_prefix)
-        script = node.find("script").get("path")
-        self.assertEqual(script, "")
+        # script = node.find("script").get("path")
+        # self.assertEqual(script, "")
 
     def test_ovs_ethernet_driver(self):
         d = vif.LibvirtGenericVIFDriver(self._get_conn(ver=9010))
@@ -723,7 +723,7 @@ class LibvirtVifTestCase(test.TestCase):
         br_want = self.vif_midonet['devname']
         xml = self._get_instance_xml(d, self.vif_ovs_filter_cap)
         node = self._get_node(xml)
-        self._assertTypeAndMacEquals(node, "ethernet", "target", "dev",
+        self._assertTypeAndMacEquals(node, "bridge", "target", "dev",
                                      self.vif_ovs_filter_cap, br_want)
 
     def _check_neutron_hybrid_driver(self, d, vif, br_want):
