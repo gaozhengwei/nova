@@ -306,6 +306,11 @@ class Image(object):
         '''
         return False
 
+    @staticmethod
+    def is_file_in_instance_path():
+        """True if the backend stores images in files under instance path."""
+        return False
+
     def direct_fetch(self, image_id, image_meta, image_locations):
         """Create an image from a direct image location.
 
@@ -362,6 +367,10 @@ class Raw(Image):
 
     def snapshot_extract(self, target, out_format):
         images.convert_image(self.path, target, out_format)
+
+    @staticmethod
+    def is_file_in_instance_path():
+        return True
 
 
 class Qcow2(Image):
@@ -426,6 +435,10 @@ class Qcow2(Image):
         libvirt_utils.extract_snapshot(self.path, 'qcow2',
                                        target,
                                        out_format)
+
+    @staticmethod
+    def is_file_in_instance_path():
+        return True
 
 
 class Lvm(Image):
