@@ -30,7 +30,7 @@ from nova.tests import fake_processutils
 from nova.tests.virt.libvirt import fake_libvirt_utils
 from nova import utils
 from nova.virt.libvirt import imagebackend
-from nova.virt.libvirt import rbd
+from nova.virt.libvirt import rbd_utils
 
 CONF = cfg.CONF
 
@@ -730,8 +730,8 @@ class RbdTestCase(_ImageTestCase, test.NoDBTestCase):
                    group='libvirt')
         self.libvirt_utils = imagebackend.libvirt_utils
         self.utils = imagebackend.utils
-        self.mox.StubOutWithMock(rbd, 'rbd')
-        self.mox.StubOutWithMock(rbd, 'rados')
+        self.mox.StubOutWithMock(rbd_utils, 'rbd')
+        self.mox.StubOutWithMock(rbd_utils, 'rados')
 
     def test_cache(self):
         image = self.image_class(self.INSTANCE, self.NAME)
@@ -803,7 +803,7 @@ class RbdTestCase(_ImageTestCase, test.NoDBTestCase):
         fn = self.mox.CreateMockAnything()
         fn(max_size=None, target=self.TEMPLATE_PATH)
 
-        rbd.rbd.RBD_FEATURE_LAYERING = 1
+        rbd_utils.rbd.RBD_FEATURE_LAYERING = 1
 
         fake_processutils.fake_execute_clear_log()
         fake_processutils.stub_out_processutils_execute(self.stubs)
@@ -829,7 +829,7 @@ class RbdTestCase(_ImageTestCase, test.NoDBTestCase):
         full_size = self.SIZE * 2
         fn(max_size=full_size, target=self.TEMPLATE_PATH)
 
-        rbd.rbd.RBD_FEATURE_LAYERING = 1
+        rbd_utils.rbd.RBD_FEATURE_LAYERING = 1
 
         fake_processutils.fake_execute_clear_log()
         fake_processutils.stub_out_processutils_execute(self.stubs)
@@ -856,7 +856,7 @@ class RbdTestCase(_ImageTestCase, test.NoDBTestCase):
         self.mox.VerifyAll()
 
     def test_create_image_already_exists(self):
-        rbd.rbd.RBD_FEATURE_LAYERING = 1
+        rbd_utils.rbd.RBD_FEATURE_LAYERING = 1
 
         image = self.image_class(self.INSTANCE, self.NAME)
         self.mox.StubOutWithMock(image, 'check_image_exists')
@@ -1020,8 +1020,8 @@ class BackendTestCase(test.NoDBTestCase):
         pool = "FakePool"
         self.flags(images_rbd_pool=pool, group='libvirt')
         self.flags(images_rbd_ceph_conf=conf, group='libvirt')
-        self.mox.StubOutWithMock(rbd, 'rbd')
-        self.mox.StubOutWithMock(rbd, 'rados')
+        self.mox.StubOutWithMock(rbd_utils, 'rbd')
+        self.mox.StubOutWithMock(rbd_utils, 'rados')
         self._test_image('rbd', imagebackend.Rbd, imagebackend.Rbd)
 
     def test_image_default(self):
