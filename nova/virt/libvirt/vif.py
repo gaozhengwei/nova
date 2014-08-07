@@ -272,10 +272,34 @@ class LibvirtGenericVIFDriver(object):
         conf = self.get_base_config(instance, vif, image_meta,
                                     inst_type, virt_type)
 
-        params = vif["qbh_params"]
+        profile = vif["profile"]
+        vif_details = vif["details"]
+        net_type = 'direct'
+        if vif['vnic_type'] == network_model.VNIC_TYPE_DIRECT:
+            net_type = 'hostdev'
+
         designer.set_vif_host_backend_802qbh_config(
-            conf, vif['network'].get_meta('interface'),
-            params['profileid'])
+            conf, net_type, profile['pci_slot'],
+            vif_details[network_model.VIF_DETAILS_PROFILEID])
+
+        designer.set_vif_bandwidth_config(conf, inst_type)
+
+        return conf
+
+    def get_config_hw_veb(self, instance, vif, image_meta,
+                            inst_type, virt_type):
+        conf = self.get_base_config(instance, vif, image_meta,
+                                    inst_type, virt_type)
+
+        profile = vif["profile"]
+        vif_details = vif["details"]
+        net_type = 'direct'
+        if vif['vnic_type'] == network_model.VNIC_TYPE_DIRECT:
+            net_type = 'hostdev'
+
+        designer.set_vif_host_backend_hw_veb(
+            conf, net_type, profile['pci_slot'],
+            vif_details[network_model.VIF_DETAILS_VLAN])
 
         designer.set_vif_bandwidth_config(conf, inst_type)
 
@@ -372,6 +396,12 @@ class LibvirtGenericVIFDriver(object):
                                                virt_type)
         elif vif_type == network_model.VIF_TYPE_MIDONET:
             return self.get_config_midonet(instance,
+                                           vif,
+                                           image_meta,
+                                           inst_type,
+                                           virt_type)
+        elif vif_type == network_model.VIF_TYPE_HW_VEB:
+            return self.get_config_hw_veb(instance,
                                            vif,
                                            image_meta,
                                            inst_type,
@@ -522,6 +552,9 @@ class LibvirtGenericVIFDriver(object):
         pass
 
     def plug_802qbh(self, instance, vif):
+        pass
+
+    def plug_hw_veb(self, instance, vif):
         pass
 
     def plug_midonet(self, instance, vif):
@@ -686,6 +719,9 @@ class LibvirtGenericVIFDriver(object):
         pass
 
     def unplug_802qbh(self, instance, vif):
+        pass
+
+    def unplug_hw_veb(self, instance, vif):
         pass
 
     def unplug_midonet(self, instance, vif):

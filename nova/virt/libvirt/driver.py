@@ -45,6 +45,7 @@ import glob
 import mmap
 import os
 import shutil
+import six
 import socket
 import sys
 import tempfile
@@ -74,6 +75,8 @@ from nova.objects import block_device as block_device_obj
 from nova.objects import flavor as flavor_obj
 from nova.objects import instance as instance_obj
 from nova.objects import service as service_obj
+from nova import image
+from nova.network import model as network_model
 from nova.openstack.common import excutils
 from nova.openstack.common import fileutils
 from nova.openstack.common.gettextutils import _
@@ -1550,6 +1553,7 @@ class LibvirtDriver(driver.ComputeDriver):
             if state == power_state.RUNNING or state == power_state.PAUSED:
                 self._detach_pci_devices(virt_dom,
                     pci_manager.get_instance_pci_devs(instance))
+                self._detach_sriov_ports(instance, virt_dom)
                 virt_dom.managedSave(0)
 
         snapshot_backend = self.image_backend.snapshot(disk_path,
@@ -1563,6 +1567,36 @@ class LibvirtDriver(driver.ComputeDriver):
                      instance=instance)
 
         update_task_state(task_state=task_states.IMAGE_PENDING_UPLOAD)
+        snapshot_directory = CONF.libvirt.snapshots_directory
+        fileutils.ensure_tree(snapshot_directory)
+        with utils.tempdir(dir=snapshot_directory) as tmpdir:
+            try:
+                out_path = os.path.join(tmpdir, snapshot_name)
+                if live_snapshot:
+                    # NOTE(xqueralt): libvirt needs o+x in the temp directory
+                    os.chmod(tmpdir, 0o701)
+                    self._live_snapshot(virt_dom, disk_path, out_path,
+                                        image_format)
+                else:
+                    snapshot_backend.snapshot_extract(out_path, image_format)
+            finally:
+                new_dom = None
+                # NOTE(dkang): because previous managedSave is not called
+                #              for LXC, _create_domain must not be called.
+                if CONF.libvirt.virt_type != 'lxc' and not live_snapshot:
+                    if state == power_state.RUNNING:
+                        new_dom = self._create_domain(domain=virt_dom)
+                    elif state == power_state.PAUSED:
+                        new_dom = self._create_domain(domain=virt_dom,
+                                launch_flags=libvirt.VIR_DOMAIN_START_PAUSED)
+                    if new_dom is not None:
+                        self._attach_pci_devices(new_dom,
+                            pci_manager.get_instance_pci_devs(instance))
+                        self._attach_sriov_ports(context, instance, new_dom)
+                LOG.info(_("Snapshot extracted, beginning image upload"),
+                         instance=instance)
+
+            # Upload that image to the image service
 
         try:
             update_task_state(task_state=task_states.IMAGE_UPLOADING,
@@ -2078,7 +2112,7 @@ class LibvirtDriver(driver.ComputeDriver):
         #             FLAG defines depending on how long the get_info
         #             call takes to return.
         self._prepare_pci_devices_for_use(
-            pci_manager.get_instance_pci_devs(instance))
+            pci_manager.get_instance_pci_devs(instance, 'all'))
         for x in xrange(CONF.libvirt.wait_soft_reboot_seconds):
             dom = self._lookup_by_name(instance["name"])
             (state, _max_mem, _mem, _cpus, _t) = dom.info()
@@ -2161,7 +2195,7 @@ class LibvirtDriver(driver.ComputeDriver):
                                         block_device_info, reboot=True,
                                         vifs_already_plugged=True)
         self._prepare_pci_devices_for_use(
-            pci_manager.get_instance_pci_devs(instance))
+            pci_manager.get_instance_pci_devs(instance, 'all'))
 
         def _wait_for_reboot():
             """Called at an interval until the VM is running again."""
@@ -2185,6 +2219,81 @@ class LibvirtDriver(driver.ComputeDriver):
         dom = self._lookup_by_name(instance['name'])
         dom.resume()
 
+    def _clean_shutdown(self, instance, timeout, retry_interval):
+        """Attempt to shutdown the instance gracefully.
+
+        :param instance: The instance to be shutdown
+        :param timeout: How long to wait in seconds for the instance to
+                        shutdown
+        :param retry_interval: How often in seconds to signal the instance
+                               to shutdown while waiting
+
+        :returns: True if the shutdown succeeded
+        """
+
+        # List of states that represent a shutdown instance
+        SHUTDOWN_STATES = [power_state.SHUTDOWN,
+                           power_state.CRASHED]
+
+        try:
+            dom = self._lookup_by_name(instance["name"])
+        except exception.InstanceNotFound:
+            # If the instance has gone then we don't need to
+            # wait for it to shutdown
+            return True
+
+        (state, _max_mem, _mem, _cpus, _t) = dom.info()
+        state = LIBVIRT_POWER_STATE[state]
+        if state in SHUTDOWN_STATES:
+            LOG.info(_LI("Instance already shutdown."),
+                     instance=instance)
+            return True
+
+        LOG.debug("Shutting down instance from state %s", state,
+                  instance=instance)
+        dom.shutdown()
+        retry_countdown = retry_interval
+
+        for sec in six.moves.range(timeout):
+
+            dom = self._lookup_by_name(instance["name"])
+            (state, _max_mem, _mem, _cpus, _t) = dom.info()
+            state = LIBVIRT_POWER_STATE[state]
+
+            if state in SHUTDOWN_STATES:
+                LOG.info(_("Instance shutdown successfully after %d "
+                              "seconds."), sec, instance=instance)
+                return True
+
+            # Note(PhilD): We can't assume that the Guest was able to process
+            #              any previous shutdown signal (for example it may
+            #              have still been startingup, so within the overall
+            #              timeout we re-trigger the shutdown every
+            #              retry_interval
+            if retry_countdown == 0:
+                retry_countdown = retry_interval
+                # Instance could shutdown at any time, in which case we
+                # will get an exception when we call shutdown
+                try:
+                    LOG.debug("Instance in state %s after %d seconds - "
+                              "resending shutdown", state, sec,
+                              instance=instance)
+                    dom.shutdown()
+                except libvirt.libvirtError:
+                    # Assume this is because its now shutdown, so loop
+                    # one more time to clean up.
+                    LOG.debug("Ignoring libvirt exception from shutdown "
+                              "request.", instance=instance)
+                    continue
+            else:
+                retry_countdown -= 1
+
+            time.sleep(1)
+
+        LOG.info(_("Instance failed to shutdown in %d seconds."),
+                 timeout, instance=instance)
+        return False
+
     def power_off(self, instance):
         """Power off the specified instance."""
         self._destroy(instance)
@@ -2202,6 +2311,7 @@ class LibvirtDriver(driver.ComputeDriver):
         dom = self._lookup_by_name(instance['name'])
         self._detach_pci_devices(dom,
             pci_manager.get_instance_pci_devs(instance))
+        self._detach_sriov_ports(instance, dom)
         dom.managedSave(0)
 
     def resume(self, context, instance, network_info, block_device_info=None):
@@ -2213,6 +2323,7 @@ class LibvirtDriver(driver.ComputeDriver):
                            vifs_already_plugged=True)
         self._attach_pci_devices(dom,
             pci_manager.get_instance_pci_devs(instance))
+        self._attach_sriov_ports(context, instance, dom, network_info)
 
     def resume_state_on_host_boot(self, context, instance, network_info,
                                   block_device_info=None):
@@ -2951,6 +3062,72 @@ class LibvirtDriver(driver.ComputeDriver):
             LOG.error(_('Attaching PCI devices %(dev)s to %(dom)s failed.')
                       % {'dev': pci_devs, 'dom': dom.ID()})
             raise
+
+    def _prepare_args_for_get_config(self, context, instance):
+        flavor = flavor_obj.Flavor.get_by_id(context,
+                                          instance['instance_type_id'])
+        image_ref = instance['image_ref']
+        service, image_id = glance.get_remote_image_service(context,
+                                                                image_ref)
+        image_meta = compute_utils.get_image_metadata(
+                            context, service, image_ref, instance)
+        return flavor, image_meta
+
+    @staticmethod
+    def _has_sriov_port(network_info):
+        for vif in network_info:
+            if vif['vnic_type'] == network_model.VNIC_TYPE_DIRECT:
+                return True
+        return False
+
+    def _attach_sriov_ports(self, context, instance, dom, network_info=None):
+        if network_info is None:
+            network_info = instance.info_cache.network_info
+        if network_info is None:
+            return
+
+        if self._has_sriov_port(network_info):
+            flavor, image_meta = self._prepare_args_for_get_config(context,
+                                                                   instance)
+            for vif in network_info:
+                if vif['vnic_type'] == network_model.VNIC_TYPE_DIRECT:
+                    cfg = self.vif_driver.get_config(instance,
+                                                     vif,
+                                                     image_meta,
+                                                     flavor,
+                                                     CONF.libvirt.virt_type)
+                    LOG.debug('Attaching SR-IOV port %(port)s to %(dom)s',
+                          {'port': vif, 'dom': dom.ID()})
+                    dom.attachDevice(cfg.to_xml())
+
+    def _detach_sriov_ports(self, instance, dom):
+        network_info = instance.info_cache.network_info
+        if network_info is None:
+            return
+
+        context = nova_context.get_admin_context()
+        if self._has_sriov_port(network_info):
+            # for libvirt version < 1.1.1, this is race condition
+            # so forbid detach if it's an older version
+            if not self._has_min_version(
+                            MIN_LIBVIRT_DEVICE_CALLBACK_VERSION):
+                reason = (_("Detaching SR-IOV ports with"
+                           " libvirt < %(ver)s is not permitted") %
+                           {'ver': MIN_LIBVIRT_DEVICE_CALLBACK_VERSION})
+                raise exception.PciDeviceDetachFailed(reason=reason,
+                                                      dev=network_info)
+
+            flavor, image_meta = self._prepare_args_for_get_config(context,
+                                                                   instance)
+            for vif in network_info:
+                if vif['vnic_type'] == network_model.VNIC_TYPE_DIRECT:
+                    cfg = self.vif_driver.get_config(instance,
+                                                     vif,
+                                                     image_meta,
+                                                     flavor,
+                                                     CONF.libvirt.virt_type)
+                    dom.detachDeviceFlags(cfg.to_xml(),
+                                          libvirt.VIR_DOMAIN_AFFECT_LIVE)
 
     def _set_host_enabled(self, enabled,
                           disable_reason=DISABLE_REASON_UNDEFINED):

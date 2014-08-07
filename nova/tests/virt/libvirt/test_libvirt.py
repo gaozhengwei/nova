@@ -36,11 +36,13 @@ from nova.compute import flavors
 from nova.compute import manager
 from nova.compute import power_state
 from nova.compute import task_states
+from nova.compute import utils as compute_utils
 from nova.compute import vm_mode
 from nova.compute import vm_states
 from nova import context
 from nova import db
 from nova import exception
+from nova.image import glance
 from nova.network import model as network_model
 from nova.objects import flavor as flavor_obj
 from nova.objects import instance as instance_obj
@@ -170,8 +172,10 @@ class FakeVirDomainSnapshot(object):
 
 class FakeVirtDomain(object):
 
-    def __init__(self, fake_xml=None, uuidstr=None):
+    def __init__(self, fake_xml=None, uuidstr=None, id=None, name=None):
         self.uuidstr = uuidstr
+        self.id = id
+        self.domname = name
         if fake_xml:
             self._fake_dom_xml = fake_xml
         else:
@@ -184,6 +188,8 @@ class FakeVirtDomain(object):
                     </devices>
                 </domain>
             """
+    def ID(self):
+        return self.id
 
     def name(self):
         return "fake-domain %s" % self
@@ -207,6 +213,9 @@ class FakeVirtDomain(object):
         return self.uuidstr
 
     def attachDeviceFlags(self, xml, flags):
+        pass
+
+    def attachDevice(self, xml):
         pass
 
     def detachDeviceFlags(self, xml, flags):
@@ -1990,6 +1999,7 @@ class LibvirtConnTestCase(test.TestCase):
                                address='0000:00:00.1',
                                compute_id=compute_ref['id'],
                                instance_uuid=instance_ref['uuid'],
+                               request_id=None,
                                extra_info=jsonutils.dumps({}))
         db.pci_device_update(self.context, pci_device_info['compute_node_id'],
                              pci_device_info['address'], pci_device_info)
@@ -2028,6 +2038,7 @@ class LibvirtConnTestCase(test.TestCase):
                                address='0000:00:00.2',
                                compute_id=compute_ref['id'],
                                instance_uuid=instance_ref['uuid'],
+                               request_id=None,
                                extra_info=jsonutils.dumps({}))
         db.pci_device_update(self.context, pci_device_info['compute_node_id'],
                              pci_device_info['address'], pci_device_info)
@@ -5833,6 +5844,145 @@ class LibvirtConnTestCase(test.TestCase):
             instance = _get_inst(with_meta=False)
             conn._hard_reboot(self.context, instance, network_info,
                               block_device_info)
+
+    def _test_clean_shutdown(self, seconds_to_shutdown,
+                             timeout, retry_interval,
+                             shutdown_attempts, succeeds):
+        info_tuple = ('fake', 'fake', 'fake', 'also_fake')
+        shutdown_count = []
+
+        def count_shutdowns():
+            shutdown_count.append("shutdown")
+
+        # Mock domain
+        mock_domain = self.mox.CreateMock(libvirt.virDomain)
+
+        mock_domain.info().AndReturn(
+                (libvirt_driver.VIR_DOMAIN_RUNNING,) + info_tuple)
+        mock_domain.shutdown().WithSideEffects(count_shutdowns)
+
+        retry_countdown = retry_interval
+        for x in xrange(min(seconds_to_shutdown, timeout)):
+            mock_domain.info().AndReturn(
+                (libvirt_driver.VIR_DOMAIN_RUNNING,) + info_tuple)
+            if retry_countdown == 0:
+                mock_domain.shutdown().WithSideEffects(count_shutdowns)
+                retry_countdown = retry_interval
+            else:
+                retry_countdown -= 1
+
+        if seconds_to_shutdown < timeout:
+            mock_domain.info().AndReturn(
+                (libvirt_driver.VIR_DOMAIN_SHUTDOWN,) + info_tuple)
+
+        self.mox.ReplayAll()
+
+        def fake_lookup_by_name(instance_name):
+            return mock_domain
+
+        def fake_create_domain(**kwargs):
+            self.reboot_create_called = True
+
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        instance = {"name": "instancename", "id": "instanceid",
+                    "uuid": "875a8070-d0b9-4949-8b31-104d125c9a64"}
+        self.stubs.Set(conn, '_lookup_by_name', fake_lookup_by_name)
+        self.stubs.Set(conn, '_create_domain', fake_create_domain)
+        result = conn._clean_shutdown(instance, timeout, retry_interval)
+
+        self.assertEqual(succeeds, result)
+        self.assertEqual(shutdown_attempts, len(shutdown_count))
+
+    def test_clean_shutdown_first_time(self):
+        self._test_clean_shutdown(seconds_to_shutdown=2,
+                                  timeout=5,
+                                  retry_interval=3,
+                                  shutdown_attempts=1,
+                                  succeeds=True)
+
+    def test_clean_shutdown_with_retry(self):
+        self._test_clean_shutdown(seconds_to_shutdown=4,
+                                  timeout=5,
+                                  retry_interval=3,
+                                  shutdown_attempts=2,
+                                  succeeds=True)
+
+    def test_clean_shutdown_failure(self):
+        self._test_clean_shutdown(seconds_to_shutdown=6,
+                                  timeout=5,
+                                  retry_interval=3,
+                                  shutdown_attempts=2,
+                                  succeeds=False)
+
+    def test_clean_shutdown_no_wait(self):
+        self._test_clean_shutdown(seconds_to_shutdown=6,
+                                  timeout=0,
+                                  retry_interval=3,
+                                  shutdown_attempts=1,
+                                  succeeds=False)
+
+    @mock.patch.object(FakeVirtDomain, 'attachDevice')
+    @mock.patch.object(FakeVirtDomain, 'ID', return_value=1)
+    @mock.patch.object(compute_utils, 'get_image_metadata', return_value=None)
+    def test_attach_sriov_ports(self,
+                                mock_get_image_metadata,
+                                mock_ID,
+                                mock_attachDevice):
+        instance = db.instance_create(self.context, self.test_instance)
+        network_info = _fake_network_info(self.stubs, 1)
+        network_info[0]['vnic_type'] = network_model.VNIC_TYPE_DIRECT
+        domain = FakeVirtDomain()
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+
+        conn._attach_sriov_ports(self.context, instance, domain, network_info)
+        service, image_id = glance.get_remote_image_service(self.context,
+                                                                instance['image_ref'])
+        mock_get_image_metadata.assert_called_once_with(self.context,
+            service, instance['image_ref'], instance)
+        self.assertTrue(mock_attachDevice.called)
+
+    @mock.patch.object(FakeVirtDomain, 'attachDevice')
+    @mock.patch.object(FakeVirtDomain, 'ID', return_value=1)
+    @mock.patch.object(compute_utils, 'get_image_metadata', return_value=None)
+    def test_attach_sriov_ports_with_info_cache(self,
+                                                mock_get_image_metadata,
+                                                mock_ID,
+                                                mock_attachDevice):
+        instance = db.instance_create(self.context, self.test_instance)
+        network_info = _fake_network_info(self.stubs, 1)
+        network_info[0]['vnic_type'] = network_model.VNIC_TYPE_DIRECT
+        instance.info_cache.network_info = network_info
+        domain = FakeVirtDomain()
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+
+        conn._attach_sriov_ports(self.context, instance, domain, None)
+        service, image_id = glance.get_remote_image_service(self.context,
+                                                                instance['image_ref'])
+        mock_get_image_metadata.assert_called_once_with(self.context,
+            service, instance['image_ref'], instance)
+        self.assertTrue(mock_attachDevice.called)
+
+    @mock.patch.object(libvirt_driver.LibvirtDriver,
+                       '_has_min_version', return_value=True)
+    @mock.patch.object(FakeVirtDomain, 'detachDeviceFlags')
+    @mock.patch.object(compute_utils, 'get_image_metadata', return_value=None)
+    def test_detach_sriov_ports(self,
+                                mock_get_image_metadata,
+                                mock_detachDeviceFlags,
+                                mock_has_min_version):
+        instance = db.instance_create(self.context, self.test_instance)
+        network_info = _fake_network_info(self.stubs, 1)
+        network_info[0]['vnic_type'] = network_model.VNIC_TYPE_DIRECT
+        instance.info_cache.network_info = network_info
+        domain = FakeVirtDomain()
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+
+        conn._detach_sriov_ports(instance, domain)
+        service, image_id = glance.get_remote_image_service(self.context,
+                                                                instance['image_ref'])
+        mock_get_image_metadata.assert_called_once_with(mock.ANY,
+            service, instance['image_ref'], instance)
+        self.assertTrue(mock_detachDeviceFlags.called)
 
     def test_resume(self):
         dummyxml = ("<domain type='kvm'><name>instance-0000000a</name>"
