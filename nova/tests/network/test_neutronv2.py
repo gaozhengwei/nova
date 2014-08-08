@@ -34,6 +34,8 @@ from nova.network.neutronv2 import api as neutronapi
 from nova.network.neutronv2 import constants
 from nova.objects import instance as instance_obj
 from nova.openstack.common import jsonutils
+from nova.openstack.common import policy as common_policy
+from nova import policy
 from nova import test
 from nova.tests import fake_instance
 from nova import utils
@@ -1726,6 +1728,13 @@ class TestNeutronv2(TestNeutronv2Base):
         req_ids = [net['id'] for net in self.nets5]
         self._get_available_networks(self.nets5, pub_nets=[],
                                      req_ids=req_ids, context=admin_ctx)
+
+    def test_get_available_networks_with_custom_policy(self):
+        rules = {'network:attach_external_network':
+                 common_policy.parse_rule('')}
+        policy.set_rules(rules)
+        req_ids = [net['id'] for net in self.nets5]
+        self._get_available_networks(self.nets5, pub_nets=[], req_ids=req_ids)
 
     def test_get_floating_ip_pools(self):
         api = neutronapi.API()
