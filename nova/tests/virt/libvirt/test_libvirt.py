@@ -8246,7 +8246,7 @@ disk size: 4.4M''', ''))
         user_id = 'fake'
         project_id = 'fake'
         images.fetch_to_raw(context, image_id, target, user_id, project_id,
-                            max_size=0)
+                            max_size=0, backend=None)
 
         self.mox.ReplayAll()
         libvirt_utils.fetch_image(context, target, image_id,
