@@ -1069,6 +1069,7 @@ class _ComputeAPIUnitTestMixIn(object):
             self.compute_api._record_action_start(self.context, fake_inst,
                                                   'resize')
 
+            filter_properties['host'] = None
             scheduler_hint = {'filter_properties': filter_properties}
 
             self.compute_api.compute_task_api.resize_instance(

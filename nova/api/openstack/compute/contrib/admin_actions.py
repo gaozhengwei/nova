@@ -145,9 +145,19 @@ class AdminActionsController(wsgi.Controller):
         """Permit admins to migrate a server to a new host."""
         context = req.environ['nova.context']
         authorize(context, 'migrate')
+
+        try:
+            host = body['migrate']['host']
+        except (TypeError, KeyError):
+            host = None
+
         try:
             instance = self.compute_api.get(context, id, want_objects=True)
-            self.compute_api.resize(req.environ['nova.context'], instance)
+            self.compute_api.resize(req.environ['nova.context'],
+                                instance, host=host)
+        except (exception.ComputeServiceUnavailable,
+                exception.UnableToMigrateToSelf) as ex:
+            raise exc.HTTPBadRequest(explanation=ex.format_message())
         except exception.QuotaError as error:
             raise exc.HTTPRequestEntityTooLarge(
                 explanation=error.format_message(),

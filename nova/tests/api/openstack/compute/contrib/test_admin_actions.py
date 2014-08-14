@@ -96,7 +96,11 @@ class CommonMixin(object):
             method = action
 
         instance = self._stub_instance_get()
-        getattr(self.compute_api, method)(self.context, instance)
+        if action == 'migrate':
+            getattr(self.compute_api, method)(self.context, instance,
+                                                host=None)
+        else:
+            getattr(self.compute_api, method)(self.context, instance)
 
         self.mox.ReplayAll()
 
@@ -121,11 +125,18 @@ class CommonMixin(object):
 
         args, kwargs = compute_api_args_map.get(action, ((), {}))
 
-        getattr(self.compute_api, method)(self.context, instance,
+        if 'migrate' == action:
+            getattr(self.compute_api, method)(self.context, instance,
+                                    host=None, *args, **kwargs).AndRaise(
+                    exception.InstanceInvalidState(
+                        attr='vm_state', instance_uuid=instance['uuid'],
+                        state='foo', method=method))
+        else:
+            getattr(self.compute_api, method)(self.context, instance,
                                           *args, **kwargs).AndRaise(
-                exception.InstanceInvalidState(
-                    attr='vm_state', instance_uuid=instance['uuid'],
-                    state='foo', method=method))
+                    exception.InstanceInvalidState(
+                        attr='vm_state', instance_uuid=instance['uuid'],
+                        state='foo', method=method))
 
         self.mox.ReplayAll()
 
@@ -165,8 +176,14 @@ class CommonMixin(object):
             method = action
 
         instance = self._stub_instance_get()
-        getattr(self.compute_api, method)(self.context, instance).AndRaise(
-                exception.InstanceIsLocked(instance_uuid=instance['uuid']))
+        if 'migrate' == action:
+            getattr(self.compute_api, method)(self.context,
+                instance, host=None).AndRaise(exception.InstanceIsLocked(
+                instance_uuid=instance['uuid']))
+        else:
+            getattr(self.compute_api, method)(self.context,
+                instance).AndRaise(exception.InstanceIsLocked(
+                instance_uuid=instance['uuid']))
 
         self.mox.ReplayAll()
 
@@ -264,6 +281,55 @@ class AdminActionsTest(CommonMixin, test.NoDBTestCase):
         res = self._make_request('/servers/%s/action' % instance['uuid'],
                                  {'migrate': None})
         self.assertEqual(expected_result, res.status_int)
+
+    def test_migrate_cold_with_select_host_enabled(self):
+        self.mox.StubOutWithMock(self.compute_api, 'resize')
+        instance = self._stub_instance_get()
+        self.compute_api.resize(self.context, instance, host='hostname')
+
+        self.mox.ReplayAll()
+
+        res = self._make_request('/servers/%s/action' % instance['uuid'],
+                                 {'migrate':
+                                  {'host': 'hostname'}})
+        self.assertEqual(202, res.status_int)
+
+    def test_migrate_cold_without_select_host_enabled(self):
+        self.mox.StubOutWithMock(self.compute_api, 'resize')
+        instance = self._stub_instance_get()
+        self.compute_api.resize(self.context, instance, host=None)
+
+        self.mox.ReplayAll()
+
+        res = self._make_request('/servers/%s/action' % instance['uuid'],
+                                 {'migrate': ''})
+        self.assertEqual(202, res.status_int)
+
+    def _test_migrate_cold_failed_with_exception(self, fake_exc,
+                                                 uuid=None):
+        self.mox.StubOutWithMock(self.compute_api, 'resize')
+
+        instance = self._stub_instance_get(uuid=uuid)
+        self.compute_api.resize(self.context, instance, False,
+                                      False, 'hostname').AndRaise(fake_exc)
+
+        self.mox.ReplayAll()
+
+        res = self._make_request('/servers/%s/action' % instance.uuid,
+                                 {'migrate':
+                                  {'host': 'hostname'}})
+        self.assertEqual(400, res.status_int)
+
+    def test_migrate_cold_compute_service_unavailable(self):
+        self._test_migrate_cold_failed_with_exception(
+            exception.ComputeServiceUnavailable(host='host'))
+
+    def test_migrate_cold_unable_to_migrate_to_self(self):
+        uuid = uuidutils.generate_uuid()
+        self._test_migrate_cold_failed_with_exception(
+                exception.UnableToMigrateToSelf(instance_id=uuid,
+                                                host='host'),
+                uuid=uuid)
 
     def _test_migrate_live_succeeded(self, param):
         self.mox.StubOutWithMock(self.compute_api, 'live_migrate')

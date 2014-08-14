@@ -26,6 +26,7 @@ from nova.compute import task_states
 from nova.compute import utils as compute_utils
 from nova.compute import vm_states
 from nova.conductor.tasks import live_migrate
+from nova import db
 from nova.db import base
 from nova import exception
 from nova.image import glance
@@ -45,6 +46,7 @@ from nova.openstack.common import timeutils
 from nova import quota
 from nova.scheduler import rpcapi as scheduler_rpcapi
 from nova.scheduler import utils as scheduler_utils
+from nova import servicegroup
 
 LOG = logging.getLogger(__name__)
 
@@ -701,6 +703,32 @@ class ComputeTaskManager(base.Base):
         quotas = quotas_obj.Quotas.from_reservations(context,
                                                      reservations,
                                                      instance=instance)
+
+        host = filter_properties.get('host', None)
+        if host:
+            #do something, verify host.
+            destination = host
+            try:
+                self._check_destination_is_not_source(instance, destination)
+                self._check_host_is_up(context, destination)
+                self._check_destination_has_enough_memory(context,
+                                                        instance, destination)
+            except (exception.ComputeServiceUnavailable,
+                    exception.UnableToMigrateToSelf,
+                    exception.MigrationPreCheckError) as ex:
+                with excutils.save_and_reraise_exception():
+                    #TODO(johngarbutt) - eventually need instance actions here
+                    request_spec = {'instance_properties': {
+                        'uuid': instance['uuid'], },
+                    }
+                    updates = {'vm_state': vm_states.ACTIVE,
+                                'task_state': None}
+                    scheduler_utils.set_vm_state_and_notify(context,
+                            'compute_task', 'migrate_server', updates,
+                            ex, request_spec, self.db)
+            else:
+                filter_properties['force_hosts'] = [destination]
+
         try:
             hosts = self.scheduler_rpcapi.select_destinations(
                     context, request_spec, filter_properties)
@@ -742,6 +770,40 @@ class ComputeTaskManager(base.Base):
                 self._set_vm_state_and_notify(context, 'migrate_server',
                                               updates, ex, request_spec)
                 quotas.rollback()
+
+    def _check_destination_is_not_source(self, instance, destination):
+        if destination == instance.host:
+            raise exception.UnableToMigrateToSelf(
+                    instance_id=instance.uuid, host=destination)
+
+    def _check_host_is_up(self, context, host):
+        try:
+            service = db.service_get_by_compute_host(context, host)
+        except exception.ComputeHostNotFound:
+            raise exception.ComputeServiceUnavailable(host=host)
+
+        servicegroup_api = servicegroup.API()
+        if not servicegroup_api.service_is_up(service):
+            raise exception.ComputeServiceUnavailable(host=host)
+
+    def _check_destination_has_enough_memory(self, context,
+                                        instance, destination):
+        avail = self._get_compute_info(context, destination)['free_ram_mb']
+        mem_inst = instance.memory_mb
+
+        if not mem_inst or avail <= mem_inst:
+            instance_uuid = instance.uuid
+            dest = destination
+            reason = _("Unable to migrate %(instance_uuid)s to %(dest)s: "
+                       "Lack of memory(host:%(avail)s <= "
+                       "instance:%(mem_inst)s)")
+            raise exception.MigrationPreCheckError(reason=reason % dict(
+                    instance_uuid=instance_uuid, dest=dest, avail=avail,
+                    mem_inst=mem_inst))
+
+    def _get_compute_info(self, context, host):
+        service_ref = db.service_get_by_compute_host(context, host)
+        return service_ref['compute_node'][0]
 
     def _set_vm_state_and_notify(self, context, method, updates, ex,
                                  request_spec):

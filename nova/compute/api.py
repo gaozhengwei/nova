@@ -2357,7 +2357,7 @@ class API(base.Base):
     @check_instance_cell
     @check_instance_state(vm_state=[vm_states.ACTIVE, vm_states.STOPPED],
                           task_state=[None])
-    def resize(self, context, instance, flavor_id=None,
+    def resize(self, context, instance, flavor_id=None, host=None,
                **extra_instance_updates):
         """Resize (ie, migrate) a running instance.
 
@@ -2447,6 +2447,7 @@ class API(base.Base):
 
         self._record_action_start(context, instance, instance_actions.RESIZE)
 
+        filter_properties['host'] = host
         scheduler_hint = {'filter_properties': filter_properties}
         self.compute_task_api.resize_instance(context, instance,
                 extra_instance_updates, scheduler_hint=scheduler_hint,
