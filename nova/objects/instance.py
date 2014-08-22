@@ -23,7 +23,7 @@ from nova.objects import fields
 from nova.objects import flavor as flavor_obj
 from nova.objects import instance_fault
 from nova.objects import instance_info_cache
-from nova.objects import pci_device
+from nova.objects import pci_device as pci_device_obj
 from nova.objects import security_group
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common import log as logging
@@ -286,11 +286,6 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
                 instance_fault.InstanceFault.get_latest_for_instance(
                     context, instance.uuid))
 
-        if 'pci_devices' in expected_attrs:
-            pci_devices = base.obj_make_list(
-                    context, pci_device.PciDeviceList(),
-                    pci_device.PciDevice, db_inst['pci_devices'])
-            instance['pci_devices'] = pci_devices
         if 'info_cache' in expected_attrs:
             if db_inst['info_cache'] is None:
                 instance.info_cache = None
@@ -299,8 +294,18 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
                 # passed to us by a backlevel service, things will break
                 instance.info_cache = instance_info_cache.InstanceInfoCache()
             if instance.info_cache is not None:
-                instance_info_cache.InstanceInfoCache._from_db_object(
-                    context, instance.info_cache, db_inst['info_cache'])
+                instance.info_cache._from_db_object(context,
+                                                    instance.info_cache,
+                                                    db_inst['info_cache'])
+
+        # TODO(danms): If we are updating these on a backlevel instance,
+        # we'll end up sending back new versions of these objects (see
+        # above note for new info_caches
+        if 'pci_devices' in expected_attrs:
+            pci_devices = base.obj_make_list(
+                    context, pci_device_obj.PciDeviceList(),
+                    pci_device_obj.PciDevice, db_inst['pci_devices'])
+            instance['pci_devices'] = pci_devices
         if 'security_groups' in expected_attrs:
             sec_groups = base.obj_make_list(
                     context, security_group.SecurityGroupList(),
@@ -470,6 +475,10 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
 
         expected_attrs = [attr for attr in _INSTANCE_OPTIONAL_JOINED_FIELDS
                                if self.obj_attr_is_set(attr)]
+        if 'pci_devices' in expected_attrs:
+            # NOTE(danms): We don't refresh pci_devices on save right now
+            expected_attrs.remove('pci_devices')
+
         # NOTE(alaski): We need to pull system_metadata for the
         # notification.send_update() below.  If we don't there's a KeyError
         # when it tries to extract the flavor.
@@ -485,7 +494,8 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
             cells_api = cells_rpcapi.CellsAPI()
             cells_api.instance_update_at_top(context, inst_ref)
 
-        self._from_db_object(context, self, inst_ref, expected_attrs)
+        self._from_db_object(context, self, inst_ref,
+                             expected_attrs=expected_attrs)
         notifications.send_update(context, old_ref, inst_ref)
         self.obj_reset_changes()
 
