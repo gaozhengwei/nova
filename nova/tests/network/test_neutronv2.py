@@ -33,6 +33,7 @@ from nova.network import neutronv2
 from nova.network.neutronv2 import api as neutronapi
 from nova.network.neutronv2 import constants
 from nova.objects import instance as instance_obj
+from nova.objects import network_request as net_req_obj
 from nova.openstack.common import jsonutils
 from nova.openstack.common import policy as common_policy
 from nova import policy
@@ -374,10 +375,11 @@ class TestNeutronv2Base(test.TestCase):
         ordered_networks = []
         port = {}
         if 'requested_networks' in kwargs:
-            for n_id, fixed_ip, port_id in kwargs['requested_networks']:
-                if port_id:
-                    if port_id == 'my_portid3':
-                        self.moxed_client.show_port(port_id).AndReturn(
+            for request in kwargs['requested_networks']:
+                if request.port_id:
+                    if request.port_id == 'my_portid3':
+                        self.moxed_client.show_port(request.port_id
+                        ).AndReturn(
                             {'port': {'id': 'my_portid3',
                                       'network_id': 'my_netid1',
                                       'mac_address': 'my_mac1',
@@ -386,29 +388,30 @@ class TestNeutronv2Base(test.TestCase):
                                                    ''}})
                         ports['my_netid1'] = [self.port_data1[0],
                                             self.port_data3[0]]
-                        ports[port_id] = self.port_data3[0]
-                        n_id = 'my_netid1'
+                        ports[request.port_id] = self.port_data3[0]
+                        request.network_id = 'my_netid1'
                         if macs is not None:
                             macs.discard('my_mac1')
                     else:
-                        self.moxed_client.show_port(port_id).AndReturn(
+                        self.moxed_client.show_port(request.port_id).AndReturn(
                             {'port': {'id': 'my_portid1',
                                       'network_id': 'my_netid1',
                                       'mac_address': 'my_mac1',
                                       'device_id': kwargs.get('_device') and
                                                    self.instance2['uuid'] or
                                                    ''}})
-                        ports[port_id] = self.port_data1[0]
-                        n_id = 'my_netid1'
+                        ports[request.port_id] = self.port_data1[0]
+                        request.network_id = 'my_netid1'
                         if macs is not None:
                             macs.discard('my_mac1')
                 else:
-                    fixed_ips[n_id] = fixed_ip
-                req_net_ids.append(n_id)
-                ordered_networks.append((n_id, fixed_ip, port_id))
+                    fixed_ips[request.network_id] = request.address
+                req_net_ids.append(request.network_id)
+                ordered_networks.append(request)
         else:
             for n in nets:
-                ordered_networks.append((n['id'], None, None))
+                ordered_networks.append(
+                    net_req_obj.NetworkRequest(network_id=n['id']))
         if kwargs.get('_break') == 'pre_list_networks':
             self.mox.ReplayAll()
             return api
@@ -428,15 +431,15 @@ class TestNeutronv2Base(test.TestCase):
             self.moxed_client.list_networks(
                 **mox_list_params).AndReturn({'networks': []})
 
-        if (('requested_networks' not in kwargs
-            or kwargs['requested_networks'] == [(None, None, None)])
+        if (('requested_networks' not in kwargs or
+             kwargs['requested_networks'].as_tuples() == [(None, None, None)])
             and len(nets) > 1):
                 self.mox.ReplayAll()
                 return api
 
         ports_in_requested_net_order = []
         nets_in_requested_net_order = []
-        for net_id, fixed_ip, port_id in ordered_networks:
+        for request in ordered_networks:
             port_req_body = {
                 'port': {
                     'device_id': self.instance['uuid'],
@@ -446,7 +449,7 @@ class TestNeutronv2Base(test.TestCase):
             # Network lookup for available network_id
             network = None
             for net in nets:
-                if net['id'] == net_id:
+                if net['id'] == request.network_id:
                     network = net
                     break
             # if net_id did not pass validate_networks() and not available
@@ -466,19 +469,19 @@ class TestNeutronv2Base(test.TestCase):
                                                      AndReturn(has_portbinding)
             api._has_port_binding_extension(mox.IgnoreArg()).\
                                                  AndReturn(has_portbinding)
-            if port_id:
-                port = ports[port_id]
-                self.moxed_client.update_port(port_id,
+            if request.port_id:
+                port = ports[request.port_id]
+                self.moxed_client.update_port(request.port_id,
                                               MyComparator(port_req_body)
                                               ).AndReturn(
                                                   {'port': port})
-                ports_in_requested_net_order.append(port_id)
+                ports_in_requested_net_order.append(request.port_id)
             else:
-                fixed_ip = fixed_ips.get(net_id)
-                if fixed_ip:
+                request.address = fixed_ips.get(request.network_id)
+                if request.address:
                     port_req_body['port']['fixed_ips'] = [{'ip_address':
-                                                           fixed_ip}]
-                port_req_body['port']['network_id'] = net_id
+                                                           request.address}]
+                port_req_body['port']['network_id'] = request.network_id
                 port_req_body['port']['admin_state_up'] = True
                 port_req_body['port']['tenant_id'] = \
                     self.instance['project_id']
@@ -490,7 +493,7 @@ class TestNeutronv2Base(test.TestCase):
                 res_port = {'port': {'id': 'fake'}}
                 if has_extra_dhcp_opts:
                     port_req_body['port']['extra_dhcp_opts'] = dhcp_options
-                if kwargs.get('_break') == 'mac' + net_id:
+                if kwargs.get('_break') == 'mac' + request.network_id:
                     self.mox.ReplayAll()
                     return api
                 self.moxed_client.create_port(
@@ -853,7 +856,8 @@ class TestNeutronv2(TestNeutronv2Base):
         # Make sure allocate_for_instance works when only a portid is provided
         self._returned_nw_info = self.port_data1
         result = self._allocate_for_instance(
-            requested_networks=[(None, None, 'my_portid1')])
+            requested_networks=net_req_obj.NetworkRequestList(
+                objects=[net_req_obj.NetworkRequest(port_id='my_portid1')]))
         self.assertEqual(self.port_data1, result)
 
     def test_allocate_for_instance_not_enough_macs_via_ports(self):
@@ -861,9 +865,10 @@ class TestNeutronv2(TestNeutronv2Base):
         # used to dynamically create a port on a network. We put the network
         # first in requested_networks so that if the code were to not pre-check
         # requested ports, it would incorrectly assign the mac and not fail.
-        requested_networks = [
-            (self.nets2[1]['id'], None, None),
-            (None, None, 'my_portid1')]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects = [
+                net_req_obj.NetworkRequest(network_id=self.nets2[1]['id']),
+                net_req_obj.NetworkRequest(port_id='my_portid1')])
         api = self._stub_allocate_for_instance(
             net_idx=2, requested_networks=requested_networks,
             macs=set(['my_mac1']),
@@ -879,9 +884,9 @@ class TestNeutronv2(TestNeutronv2Base):
         # We could pass in macs=set(), but that wouldn't tell us that
         # allocate_for_instance tracks used macs properly, so we pass in one
         # mac, and ask for two networks.
-        requested_networks = [
-            (self.nets2[1]['id'], None, None),
-            (self.nets2[0]['id'], None, None)]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=self.nets2[1]['id']),
+                     net_req_obj.NetworkRequest(network_id=self.nets2[0]['id'])])
         api = self._stub_allocate_for_instance(
             net_idx=2, requested_networks=requested_networks,
             macs=set(['my_mac2']),
@@ -894,16 +899,17 @@ class TestNeutronv2(TestNeutronv2Base):
     def test_allocate_for_instance_two_macs_two_networks(self):
         # If two MACs are available and two networks requested, two new ports
         # get made and no exceptions raised.
-        requested_networks = [
-            (self.nets2[1]['id'], None, None),
-            (self.nets2[0]['id'], None, None)]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=self.nets2[1]['id']),
+                     net_req_obj.NetworkRequest(network_id=self.nets2[0]['id'])])
         self._allocate_for_instance(
             net_idx=2, requested_networks=requested_networks,
             macs=set(['my_mac2', 'my_mac1']))
 
     def test_allocate_for_instance_mac_conflicting_requested_port(self):
         # specify only first and last network
-        requested_networks = [(None, None, 'my_portid1')]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id='my_portid1')])
         api = self._stub_allocate_for_instance(
             net_idx=1, requested_networks=requested_networks,
             macs=set(['unknown:mac']),
@@ -924,28 +930,31 @@ class TestNeutronv2(TestNeutronv2Base):
         self.nets2 (net_idx=2) is composed of self.nets3[0] and self.nets3[1]
         Do not create a port on a non available network self.nets3[2].
        """
-        requested_networks = [
-            (net['id'], None, None)
-            for net in (self.nets3[0], self.nets3[2], self.nets3[1])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=net['id'])
+                     for net in (self.nets3[0], self.nets3[2], self.nets3[1])])
         self._allocate_for_instance(net_idx=2,
                                     requested_networks=requested_networks)
 
     def test_allocate_for_instance_with_requested_networks(self):
         # specify only first and last network
-        requested_networks = [
-            (net['id'], None, None)
-            for net in (self.nets3[1], self.nets3[0], self.nets3[2])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=net['id'])
+                     for net in (self.nets3[1], self.nets3[0], self.nets3[2])])
         self._allocate_for_instance(net_idx=3,
                                     requested_networks=requested_networks)
 
     def test_allocate_for_instance_with_requested_networks_with_fixedip(self):
         # specify only first and last network
-        requested_networks = [(self.nets1[0]['id'], '10.0.1.0/24', None)]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=self.nets1[0]['id'],
+                                            address='10.0.1.0')])
         self._allocate_for_instance(net_idx=1,
                                     requested_networks=requested_networks)
 
     def test_allocate_for_instance_with_requested_networks_with_port(self):
-        requested_networks = [(None, None, 'my_portid1')]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id='my_portid1')])
         self._allocate_for_instance(net_idx=1,
                                     requested_networks=requested_networks)
 
@@ -975,9 +984,9 @@ class TestNeutronv2(TestNeutronv2Base):
         self.mox.StubOutWithMock(api, '_has_port_binding_extension')
         api._has_port_binding_extension(mox.IgnoreArg()).MultipleTimes().\
                                                          AndReturn(False)
-        requested_networks = [
-            (net['id'], None, None)
-            for net in (self.nets2[0], self.nets2[1])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=net['id'])
+                     for net in (self.nets2[0], self.nets2[1])])
         self.moxed_client.list_networks(
             id=['my_netid1', 'my_netid2']).AndReturn({'networks': self.nets2})
         index = 0
@@ -1027,9 +1036,9 @@ class TestNeutronv2(TestNeutronv2Base):
         self.mox.StubOutWithMock(api, '_has_port_binding_extension')
         api._has_port_binding_extension(mox.IgnoreArg()).MultipleTimes().\
                                                          AndReturn(False)
-        requested_networks = [
-            (net['id'], None, None)
-            for net in (self.nets2[0], self.nets2[1])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=net['id'])
+                     for net in (self.nets2[0], self.nets2[1])])
         self.moxed_client.list_networks(
             id=['my_netid1', 'my_netid2']).AndReturn({'networks': self.nets2})
         binding_port_req_body = {
@@ -1066,10 +1075,12 @@ class TestNeutronv2(TestNeutronv2Base):
         api._get_available_networks(self.context, self.instance['project_id'],
                                     []).AndRaise(BailOutEarly)
         self.mox.ReplayAll()
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest()])
         self.assertRaises(BailOutEarly,
                           api.allocate_for_instance,
                               self.context, self.instance,
-                              requested_networks=[(None, None, None)])
+                              requested_networks=requested_networks)
 
     def test_allocate_for_instance_second_time(self):
         # Make sure that allocate_for_instance only returns ports that it
@@ -1081,7 +1092,8 @@ class TestNeutronv2(TestNeutronv2Base):
 
     def test_allocate_for_instance_port_in_use(self):
         # If a port is already in use, an exception should be raised.
-        requested_networks = [(None, None, 'my_portid1')]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id='my_portid1')])
         api = self._stub_allocate_for_instance(
             requested_networks=requested_networks,
             _break='pre_list_networks',
@@ -1095,6 +1107,10 @@ class TestNeutronv2(TestNeutronv2Base):
         port_data = number == 1 and self.port_data1 or self.port_data2
         ret_data = copy.deepcopy(port_data)
         if requested_networks:
+            if isinstance(requested_networks, net_req_obj.NetworkRequestList):
+                # NOTE(danms): Temporary and transitional
+                with mock.patch('nova.utils.is_neutron', return_value=True):
+                    requested_networks = requested_networks.as_tuples()
             for net, fip, port in requested_networks:
                 ret_data.append({'network_id': net,
                                  'device_id': self.instance['uuid'],
@@ -1124,12 +1140,18 @@ class TestNeutronv2(TestNeutronv2Base):
                                     requested_networks=requested_networks)
 
     def test_deallocate_for_instance_1_with_requested(self):
-        requested = [('fake-net', 'fake-fip', 'fake-port')]
+        requested = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='fake-net',
+                                            address='1.2.3.4',
+                                            port_id='fake-port')])
         # Test to deallocate in one port env.
         self._deallocate_for_instance(1, requested_networks=requested)
 
     def test_deallocate_for_instance_2_with_requested(self):
-        requested = [('fake-net', 'fake-fip', 'fake-port')]
+        requested = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='fake-net',
+                                            address='1.2.3.4',
+                                            port_id='fake-port')])
         # Test to deallocate in one port env.
         self._deallocate_for_instance(2, requested_networks=requested)
 
@@ -1304,8 +1326,9 @@ class TestNeutronv2(TestNeutronv2Base):
         allow_duplicate_networks is set to its non default value: True
         """
         self.flags(allow_duplicate_networks=True, group='neutron')
-        requested_networks = [('my_netid1', None, None),
-                              ('my_netid1', None, None)]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='my_netid1'),
+                     net_req_obj.NetworkRequest(network_id='my_netid1')])
         ids = ['my_netid1', 'my_netid1']
 
         self.moxed_client.list_networks(
@@ -1323,34 +1346,34 @@ class TestNeutronv2(TestNeutronv2Base):
     def test_allocate_for_instance_with_requested_networks_duplicates(self):
         # specify a duplicate network to allocate to instance
         self.flags(allow_duplicate_networks=True, group='neutron')
-        requested_networks = [
-            (net['id'], None, None)
-            for net in (self.nets6[0], self.nets6[1])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=net['id'])
+                     for net in (self.nets6[0], self.nets6[1])])
         self._allocate_for_instance(net_idx=6,
                                     requested_networks=requested_networks)
 
     def test_allocate_for_instance_requested_networks_duplicates_port(self):
         # specify first port and last port that are in same network
         self.flags(allow_duplicate_networks=True, group='neutron')
-        requested_networks = [
-            (None, None, port['id'])
-            for port in (self.port_data1[0], self.port_data3[0])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id=port['id'])
+                     for port in (self.port_data1[0], self.port_data3[0])])
         self._allocate_for_instance(net_idx=6,
                                     requested_networks=requested_networks)
 
     def test_allocate_for_instance_requested_networks_duplicates_combo(self):
         # specify a combo net_idx=7 : net2, port in net1, net2, port in net1
         self.flags(allow_duplicate_networks=True, group='neutron')
-        requested_networks = [
-            ('my_netid2', None, None),
-            (None, None, self.port_data1[0]['id']),
-            ('my_netid2', None, None),
-            (None, None, self.port_data3[0]['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='my_netid2'),
+                     net_req_obj.NetworkRequest(port_id=self.port_data1[0]['id']),
+                     net_req_obj.NetworkRequest(network_id='my_netid2'),
+                     net_req_obj.NetworkRequest(port_id=self.port_data3[0]['id'])])
         self._allocate_for_instance(net_idx=7,
                                     requested_networks=requested_networks)
 
     def test_validate_networks_not_specified(self):
-        requested_networks = []
+        requested_networks = net_req_obj.NetworkRequestList(objects=[])
         self.moxed_client.list_networks(
             tenant_id=self.context.project_id,
             shared=False).AndReturn(
@@ -1368,12 +1391,15 @@ class TestNeutronv2(TestNeutronv2Base):
         # Verify that the correct exception is thrown when a non existent
         # port is passed to validate_networks.
 
-        requested_networks = [('my_netid1', None, '3123-ad34-bc43-32332ca33e')]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(
+                network_id='my_netid1',
+                port_id='3123-ad34-bc43-32332ca33e')])
 
         NeutronNotFound = neutronv2.exceptions.NeutronClientException(
                                                             status_code=404)
-        self.moxed_client.show_port(requested_networks[0][2]).AndRaise(
-                                                        NeutronNotFound)
+        self.moxed_client.show_port(requested_networks[0].port_id).AndRaise(
+            NeutronNotFound)
         self.mox.ReplayAll()
         # Expected call from setUp.
         neutronv2.get_client(None)
@@ -1386,11 +1412,14 @@ class TestNeutronv2(TestNeutronv2Base):
         # Verify that the correct exception is thrown when a non existent
         # port is passed to validate_networks.
 
-        requested_networks = [('my_netid1', None, '3123-ad34-bc43-32332ca33e')]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(
+                network_id='my_netid1',
+                port_id='3123-ad34-bc43-32332ca33e')])
 
         NeutronNotFound = neutronv2.exceptions.NeutronClientException(
                                                             status_code=0)
-        self.moxed_client.show_port(requested_networks[0][2]).AndRaise(
+        self.moxed_client.show_port(requested_networks[0].port_id).AndRaise(
                                                         NeutronNotFound)
         self.mox.ReplayAll()
         # Expected call from setUp.
@@ -1401,7 +1430,8 @@ class TestNeutronv2(TestNeutronv2Base):
                           self.context, requested_networks, 1)
 
     def test_validate_networks_port_in_use(self):
-        requested_networks = [(None, None, self.port_data3[0]['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id=self.port_data3[0]['id'])])
         self.moxed_client.show_port(self.port_data3[0]['id']).\
             AndReturn({'port': self.port_data3[0]})
 
@@ -1417,7 +1447,8 @@ class TestNeutronv2(TestNeutronv2Base):
         port_a['device_id'] = None
         port_a['device_owner'] = None
 
-        requested_networks = [(None, None, port_a['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id=port_a['id'])])
         self.moxed_client.show_port(port_a['id']).AndReturn({'port': port_a})
 
         self.mox.ReplayAll()
@@ -1428,7 +1459,8 @@ class TestNeutronv2(TestNeutronv2Base):
                           self.context, requested_networks, 1)
 
     def test_validate_networks_no_subnet_id(self):
-        requested_networks = [('his_netid4', None, None)]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='his_netid4')])
         ids = ['his_netid4']
         self.moxed_client.list_networks(
             id=mox.SameElementsAs(ids)).AndReturn(
@@ -1454,8 +1486,9 @@ class TestNeutronv2(TestNeutronv2Base):
             port['device_id'] = None
             port['device_owner'] = None
 
-        requested_networks = [(None, None, port_a['id']),
-                             (None, None, port_b['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id=port_a['id']),
+                     net_req_obj.NetworkRequest(port_id=port_b['id'])])
         self.moxed_client.show_port(port_a['id']).AndReturn(
                                                   {'port': port_a})
         self.moxed_client.show_port(port_b['id']).AndReturn(
@@ -1483,8 +1516,9 @@ class TestNeutronv2(TestNeutronv2Base):
             port['device_id'] = None
             port['device_owner'] = None
 
-        requested_networks = [(None, None, port_a['id']),
-                              (None, None, port_b['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id=port_a['id']),
+                     net_req_obj.NetworkRequest(port_id=port_b['id'])])
         self.moxed_client.show_port(port_a['id']).AndReturn(
                                                  {'port': port_a})
         self.moxed_client.show_port(port_b['id']).AndReturn(
@@ -1505,8 +1539,9 @@ class TestNeutronv2(TestNeutronv2Base):
             port['device_id'] = None
             port['device_owner'] = None
 
-        requested_networks = [(None, None, port_a['id']),
-                              (None, None, port_b['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id=port_a['id']),
+                     net_req_obj.NetworkRequest(port_id=port_b['id'])])
         self.moxed_client.show_port(port_a['id']).AndReturn({'port': port_a})
         self.moxed_client.show_port(port_b['id']).AndReturn({'port': port_b})
         self.mox.ReplayAll()
@@ -1518,8 +1553,9 @@ class TestNeutronv2(TestNeutronv2Base):
         # Test validation for a request for one instance needing
         # two ports, where the quota is 2 and 2 ports are in use
         #  => instances which can be created = 0
-        requested_networks = [('my_netid1', None, None),
-                              ('my_netid2', None, None)]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='my_netid1'),
+                     net_req_obj.NetworkRequest(network_id='my_netid2')])
         ids = ['my_netid1', 'my_netid2']
         self.moxed_client.list_networks(
             id=mox.SameElementsAs(ids)).AndReturn(
@@ -1541,8 +1577,9 @@ class TestNeutronv2(TestNeutronv2Base):
         port_b = self.port_data2[1]
         port_b['device_id'] = None
         port_b['device_owner'] = None
-        requested_networks = [('my_netid1', None, None),
-                              (None, None, port_b['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='my_netid1'),
+                     net_req_obj.NetworkRequest(port_id=port_b['id'])])
         self.moxed_client.show_port(port_b['id']).AndReturn({'port': port_b})
         ids = ['my_netid1']
         self.moxed_client.list_networks(
@@ -1565,7 +1602,8 @@ class TestNeutronv2(TestNeutronv2Base):
         port_b = self.port_data2[1]
         port_b['device_id'] = None
         port_b['device_owner'] = None
-        requested_networks = [(None, None, port_b['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id=port_b['id'])])
         self.moxed_client.show_port(port_b['id']).AndReturn({'port': port_b})
         self.mox.ReplayAll()
         api = neutronapi.API()
@@ -1577,8 +1615,9 @@ class TestNeutronv2(TestNeutronv2Base):
         # Test validation for a request for two instance needing
         # two ports each, where the quota is 5 and 2 ports are in use
         #  => instances which can be created = 1
-        requested_networks = [('my_netid1', None, None),
-                              ('my_netid2', None, None)]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='my_netid1'),
+                     net_req_obj.NetworkRequest(network_id='my_netid2')])
         ids = ['my_netid1', 'my_netid2']
         self.moxed_client.list_networks(
             id=mox.SameElementsAs(ids)).AndReturn(
@@ -1598,8 +1637,9 @@ class TestNeutronv2(TestNeutronv2Base):
         # Test validation for a request for two instance needing
         # two ports each, where the quota is -1 (unlimited)
         #  => instances which can be created = 1
-        requested_networks = [('my_netid1', None, None),
-                              ('my_netid2', None, None)]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id='my_netid1'),
+                     net_req_obj.NetworkRequest(network_id='my_netid2')])
         ids = ['my_netid1', 'my_netid2']
         self.moxed_client.list_networks(
             id=mox.SameElementsAs(ids)).AndReturn(
@@ -1625,8 +1665,9 @@ class TestNeutronv2(TestNeutronv2Base):
             port['device_id'] = None
             port['device_owner'] = None
 
-        requested_networks = [(None, None, port_a['id']),
-                              (None, None, port_b['id'])]
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id=port_a['id']),
+                     net_req_obj.NetworkRequest(port_id=port_b['id'])])
         self.moxed_client.show_port(port_a['id']).AndReturn({'port': port_a})
         self.moxed_client.show_port(port_b['id']).AndReturn({'port': port_b})
 
@@ -1728,13 +1769,6 @@ class TestNeutronv2(TestNeutronv2Base):
         req_ids = [net['id'] for net in self.nets5]
         self._get_available_networks(self.nets5, pub_nets=[],
                                      req_ids=req_ids, context=admin_ctx)
-
-    def test_get_available_networks_with_custom_policy(self):
-        rules = {'network:attach_external_network':
-                 common_policy.parse_rule('')}
-        policy.set_rules(rules)
-        req_ids = [net['id'] for net in self.nets5]
-        self._get_available_networks(self.nets5, pub_nets=[], req_ids=req_ids)
 
     def test_get_floating_ip_pools(self):
         api = neutronapi.API()
