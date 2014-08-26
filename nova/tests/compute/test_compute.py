@@ -59,6 +59,7 @@ from nova.objects import block_device as block_device_obj
 from nova.objects import instance as instance_obj
 from nova.objects import instance_group as instance_group_obj
 from nova.objects import migration as migration_obj
+from nova.objects import network_request as net_req_obj
 from nova.objects import quotas as quotas_obj
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common import importutils
@@ -1260,13 +1261,15 @@ class ComputeTestCase(BaseTestCase):
         def fake_is_neutron():
             return True
         self.stubs.Set(utils, 'is_neutron', fake_is_neutron)
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id='adadds')])
         self.assertRaises(exception.MultiplePortsNotApplicable,
                           self.compute_api.create,
                           self.context,
                           instance_type=instance_type,
                           image_href=None,
                           max_count=2,
-                          requested_networks=[(None, None, 'adadds')])
+                          requested_networks=requested_networks)
 
     def test_create_instance_with_oversubscribed_ram(self):
         # Test passing of oversubscribed ram policy from the scheduler.

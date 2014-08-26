@@ -461,6 +461,9 @@ class API(base.Base):
         and the fixed IP address for each network provided is within
         same the network block
         """
+        if requested_networks is not None:
+            # NOTE(danms): Temporary transition
+            requested_networks = requested_networks.as_tuples()
         return self.network_api.validate_networks(context, requested_networks,
                                                   max_count)
 
@@ -483,7 +486,7 @@ class API(base.Base):
             return None, requested_networks
 
         if not availability_zone and requested_networks:
-            networks = [net[0] for net in requested_networks]
+            networks = [net.to_tuple()[0] for net in requested_networks]
             filter_azs = self._availability_zones_get_by_network(
                 context, networks)
             return filter_azs, requested_networks
@@ -1030,9 +1033,9 @@ class API(base.Base):
                         'max_net_count': max_net_count})
             max_count = max_net_count
 
-        filter_availability_zones, requested_networks = \
-            self._check_availability_zone_associate_network(context,
-                availability_zone, requested_networks)
+        # filter_availability_zones, requested_networks = \
+        #    self._check_availability_zone_associate_network(context,
+        #        availability_zone, requested_networks)
 
         block_device_mapping = self._check_and_transform_bdm(
             base_options, boot_meta, min_count, max_count,
@@ -1045,9 +1048,9 @@ class API(base.Base):
         filter_properties = self._build_filter_properties(context,
                 scheduler_hints, forced_host, forced_node, instance_type)
 
-        if filter_availability_zones:
-            filter_properties['filter_availability_zones'] = \
-                filter_availability_zones
+        # if filter_availability_zones:
+        #    filter_properties['filter_availability_zones'] = \
+        #        filter_availability_zones
 
         self._update_instance_group(context, instances, scheduler_hints)
 
@@ -1055,6 +1058,9 @@ class API(base.Base):
             self._record_action_start(context, instance,
                                       instance_actions.CREATE)
 
+        if requested_networks is not None:
+            # NOTE(danms): Temporary transition
+            requested_networks = requested_networks.as_tuples()
         self.compute_task_api.build_instances(context,
                 instances=instances, image=boot_meta,
                 filter_properties=filter_properties,
@@ -1371,7 +1377,7 @@ class API(base.Base):
                   'availability_zone': availability_zone}
         check_policy(context, 'create', target)
 
-        if requested_networks:
+        if requested_networks and len(requested_networks):
             check_policy(context, 'create:attach_network', target)
 
         if block_device_mapping:
@@ -1379,12 +1385,21 @@ class API(base.Base):
 
     def _check_multiple_instances_neutron_ports(self, requested_networks):
         """Check whether multiple instances are created from port id(s)."""
-        for net, ip, port in requested_networks:
-            if port:
+        for requested_net in requested_networks:
+            if requested_net.port_id:
                 msg = _("Unable to launch multiple instances with"
                         " a single configured port ID. Please launch your"
                         " instance one by one with different ports.")
                 raise exception.MultiplePortsNotApplicable(reason=msg)
+
+    def _check_multiple_instances_and_specified_ip(self, requested_networks):
+        """Check whether multiple instances are created with specified ip."""
+
+        for requested_net in requested_networks:
+            if requested_net.network_id and requested_net.address:
+                msg = _("max_count cannot be greater than 1 if an fixed_ip "
+                        "is specified.")
+                raise exception.InvalidFixedIpAndMaxCountRequest(reason=msg)
 
     @hooks.add_hook("create_instance")
     def create(self, context, instance_type,
