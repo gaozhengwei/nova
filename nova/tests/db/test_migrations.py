@@ -705,6 +705,35 @@ class TestNovaMigrations(BaseWalkMigrationTestCase, CommonTestsMixIn):
     def _post_downgrade_235(self, engine):
         self.assertColumnNotExists(engine, 'aggregate_metadata', 'network')
 
+    def _check_252(self, engine, data):
+        db_utils.get_table(engine, 'instance_extra')
+        db_utils.get_table(engine, 'shadow_instance_extra')
+        self.assertIndexMembers(engine, 'instance_extra',
+                                'instance_extra_idx',
+                                ['instance_uuid'])
+
+    def _post_downgrade_252(self, engine):
+        self.assertTableNotExists(engine, 'instance_extra')
+        self.assertTableNotExists(engine, 'shadow_instance_extra')
+
+    def _check_253(self, engine, data):
+        self.assertColumnExists(engine, 'instance_extra', 'pci_requests')
+        self.assertColumnExists(
+                engine, 'shadow_instance_extra', 'pci_requests')
+
+        instance_extra = db_utils.get_table(engine, 'instance_extra')
+        shadow_instance_extra = db_utils.get_table(
+                engine, 'shadow_instance_extra')
+        self.assertIsInstance(instance_extra.c.pci_requests.type,
+                              sqlalchemy.types.Text)
+        self.assertIsInstance(shadow_instance_extra.c.pci_requests.type,
+                              sqlalchemy.types.Text)
+
+    def _post_downgrade_253(self, engine):
+        self.assertColumnNotExists(engine, 'instance_extra', 'pci_requests')
+        self.assertColumnNotExists(
+                engine, 'shadow_instance_extra', 'pci_requests')
+
 
 class TestBaremetalMigrations(BaseWalkMigrationTestCase, CommonTestsMixIn):
     """Test sqlalchemy-migrate migrations."""

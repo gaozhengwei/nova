@@ -1682,6 +1682,9 @@ def instance_destroy(context, instance_uuid, constraint=None):
         model_query(context, models.InstanceFault, session=session).\
                 filter_by(instance_uuid=instance_uuid).\
                 soft_delete()
+        model_query(context, models.InstanceExtra, session=session).\
+                filter_by(instance_uuid=instance_uuid).\
+                soft_delete()
     return instance_ref
 
 
@@ -2383,6 +2386,28 @@ def instance_info_cache_delete(context, instance_uuid):
 
 
 ###################
+
+
+def instance_extra_create(context, values):
+    inst_extra_ref = models.InstanceExtra()
+    inst_extra_ref.update(values)
+    inst_extra_ref.save()
+    return inst_extra_ref
+
+
+def _instance_extra_get_by_instance_uuid_query(context, instance_uuid):
+    return (model_query(context, models.InstanceExtra)
+                         .filter_by(instance_uuid=instance_uuid))
+
+
+def instance_extra_get_by_instance_uuid(context, instance_uuid):
+    query = _instance_extra_get_by_instance_uuid_query(
+        context, instance_uuid)
+    instance_extra = query.first()
+    return instance_extra
+
+
+##################
 
 
 @require_context

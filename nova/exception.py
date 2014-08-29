@@ -1593,3 +1593,7 @@ class Forbidden(NovaException):
     ec2_code = 'AuthFailure'
     msg_fmt = _("Not authorized.")
     code = 403
+
+
+class NumaTopologyNotFound(NotFound):
+    msg_fmt = _("Instance %(instance_uuid)s does not specify a NUMA topology")

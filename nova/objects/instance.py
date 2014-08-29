@@ -256,6 +256,7 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
 
         Converts a database entity to a formal object.
         """
+        instance._context = context
         if expected_attrs is None:
             expected_attrs = []
         # Most of the field names match right now, so be quick
@@ -299,7 +300,6 @@ class Instance(base.NovaPersistentObject, base.NovaObject):
                     security_group.SecurityGroup, db_inst['security_groups'])
             instance['security_groups'] = sec_groups
 
-        instance._context = context
         instance.obj_reset_changes()
         return instance
 
