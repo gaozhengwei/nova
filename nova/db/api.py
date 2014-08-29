@@ -893,6 +893,16 @@ def instance_extra_get_by_instance_uuid(context, instance_uuid):
     return IMPL.instance_extra_get_by_instance_uuid(context, instance_uuid)
 
 
+def instance_extra_update_by_uuid(context, instance_uuid, updates):
+    """Update the instance extra record by instance uuid
+
+    :param instance_uuid: = uuid of the instance tied to the record
+    :param updates: A dict of updates to apply
+    """
+    return IMPL.instance_extra_update_by_uuid(context, instance_uuid,
+                                              updates)
+
+
 ###################
 
 
