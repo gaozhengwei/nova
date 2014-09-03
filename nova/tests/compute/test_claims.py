@@ -18,16 +18,30 @@
 import re
 import uuid
 
+import mock
+import six
+
 from nova.compute import claims
 from nova import exception
-from nova.openstack.common import jsonutils
+from nova.objects import instance_pci_requests as ins_pci_req_obj
 from nova.pci import pci_manager
 from nova import test
+
+
+class FakeResourceHandler(object):
+    test_called = False
+    usage_is_instance = False
+
+    def test_resources(self, usage, limits):
+        self.test_called = True
+        self.usage_is_itype = usage.get('name') is 'fakeitype'
+        return []
 
 
 class DummyTracker(object):
     icalled = False
     rcalled = False
+    ext_resources_handler = FakeResourceHandler()
     pci_tracker = pci_manager.PciDevTracker()
 
     def abort_instance_claim(self, *args, **kwargs):
@@ -51,7 +65,7 @@ class ClaimTestCase(test.NoDBTestCase):
         instance = self._fake_instance(**kwargs)
         if overhead is None:
             overhead = {'memory_mb': 0}
-        return claims.Claim(instance, self.tracker, self.resources,
+        return claims.Claim('context', instance, self.tracker, self.resources,
                             overhead=overhead, limits=limits)
 
     def _fake_instance(self, **kwargs):
@@ -101,29 +115,32 @@ class ClaimTestCase(test.NoDBTestCase):
         except e as ee:
             self.assertTrue(re.search(re_obj, str(ee)))
 
-    def test_cpu_unlimited(self):
-        claim = self._claim(vcpus=100000)
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_memory_unlimited(self, mock_get):
+        self._claim(memory_mb=99999999)
 
-    def test_memory_unlimited(self):
-        claim = self._claim(memory_mb=99999999)
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_disk_unlimited_root(self, mock_get):
+        self._claim(root_gb=999999)
 
-    def test_disk_unlimited_root(self):
-        claim = self._claim(root_gb=999999)
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_disk_unlimited_ephemeral(self, mock_get):
+        self._claim(ephemeral_gb=999999)
 
-    def test_disk_unlimited_ephemeral(self):
-        claim = self._claim(ephemeral_gb=999999)
-
-    def test_cpu_oversubscription(self):
-        limits = {'vcpu': 16}
-        claim = self._claim(limits, vcpus=8)
-
-    def test_memory_with_overhead(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_memory_with_overhead(self, mock_get):
         overhead = {'memory_mb': 8}
         limits = {'memory_mb': 2048}
         claim = self._claim(memory_mb=2040, limits=limits,
                             overhead=overhead)
 
-    def test_memory_with_overhead_insufficient(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_memory_with_overhead_insufficient(self, mock_get):
         overhead = {'memory_mb': 9}
         limits = {'memory_mb': 2048}
 
@@ -131,46 +148,45 @@ class ClaimTestCase(test.NoDBTestCase):
                           self._claim, limits=limits, overhead=overhead,
                           memory_mb=2040)
 
-    def test_cpu_insufficient(self):
-        limits = {'vcpu': 16}
-        self.assertRaises(exception.ComputeResourcesUnavailable,
-                          self._claim, limits=limits, vcpus=17)
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_memory_oversubscription(self, mock_get):
+        self._claim(memory_mb=4096)
 
-    def test_memory_oversubscription(self):
-        limits = {'memory_mb': 8192}
-        claim = self._claim(memory_mb=4096)
-
-    def test_memory_insufficient(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_memory_insufficient(self, mock_get):
         limits = {'memory_mb': 8192}
         self.assertRaises(exception.ComputeResourcesUnavailable,
                           self._claim, limits=limits, memory_mb=16384)
 
-    def test_disk_oversubscription(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_disk_oversubscription(self, mock_get):
         limits = {'disk_gb': 60}
         claim = self._claim(root_gb=10, ephemeral_gb=40,
                             limits=limits)
 
-    def test_disk_insufficient(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_disk_insufficient(self, mock_get):
         limits = {'disk_gb': 45}
         self.assertRaisesRegexp(re.compile("disk", re.IGNORECASE),
                 exception.ComputeResourcesUnavailable,
                 self._claim, limits=limits, root_gb=10, ephemeral_gb=40)
 
-    def test_disk_and_memory_insufficient(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_disk_and_memory_insufficient(self, mock_get):
         limits = {'disk_gb': 45, 'memory_mb': 8192}
         self.assertRaisesRegexp(re.compile("memory.*disk", re.IGNORECASE),
                 exception.ComputeResourcesUnavailable,
                 self._claim, limits=limits, root_gb=10, ephemeral_gb=40,
                 memory_mb=16384)
 
-    def test_disk_and_cpu_insufficient(self):
-        limits = {'disk_gb': 45, 'vcpu': 16}
-        self.assertRaisesRegexp(re.compile("disk.*vcpus", re.IGNORECASE),
-                exception.ComputeResourcesUnavailable,
-                self._claim, limits=limits, root_gb=10, ephemeral_gb=40,
-                vcpus=17)
-
-    def test_disk_and_cpu_and_memory_insufficient(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_disk_and_cpu_and_memory_insufficient(self, mock_get):
         limits = {'disk_gb': 45, 'vcpu': 16, 'memory_mb': 8192}
         pat = "memory.*disk.*vcpus"
         self.assertRaisesRegexp(re.compile(pat, re.IGNORECASE),
@@ -178,7 +194,9 @@ class ClaimTestCase(test.NoDBTestCase):
                 self._claim, limits=limits, root_gb=10, ephemeral_gb=40,
                 vcpus=17, memory_mb=16384)
 
-    def test_pci_pass(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_pci_pass(self, mock_get):
         dev_dict = {
             'compute_node_id': 1,
             'address': 'a',
@@ -188,18 +206,15 @@ class ClaimTestCase(test.NoDBTestCase):
         self.tracker.new_pci_tracker()
         self.tracker.pci_tracker.set_hvdevs([dev_dict])
         claim = self._claim()
-        self._set_pci_request(claim)
+        request = ins_pci_req_obj.InstancePCIRequest(count=1,
+            spec=[{'vendor_id': 'v', 'product_id': 'p'}])
+        mock_get.return_value = ins_pci_req_obj.InstancePCIRequests(
+            requests=[request])
         claim._test_pci()
 
-    def _set_pci_request(self, claim):
-        request = [{'count': 1,
-                       'spec': [{'vendor_id': 'v', 'product_id': 'p'}],
-                      }]
-
-        claim.instance.update(
-            system_metadata={'pci_requests': jsonutils.dumps(request)})
-
-    def test_pci_fail(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_pci_fail(self, mock_get):
         dev_dict = {
             'compute_node_id': 1,
             'address': 'a',
@@ -209,10 +224,15 @@ class ClaimTestCase(test.NoDBTestCase):
         self.tracker.new_pci_tracker()
         self.tracker.pci_tracker.set_hvdevs([dev_dict])
         claim = self._claim()
-        self._set_pci_request(claim)
-        self.assertEqual("Claim pci failed.", claim._test_pci())
+        request = ins_pci_req_obj.InstancePCIRequest(count=1,
+            spec=[{'vendor_id': 'v', 'product_id': 'p'}])
+        mock_get.return_value = ins_pci_req_obj.InstancePCIRequests(
+            requests=[request])
+        claim._test_pci()
 
-    def test_pci_pass_no_requests(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_pci_pass_no_requests(self, mock_get):
         dev_dict = {
             'compute_node_id': 1,
             'address': 'a',
@@ -222,10 +242,18 @@ class ClaimTestCase(test.NoDBTestCase):
         self.tracker.new_pci_tracker()
         self.tracker.pci_tracker.set_hvdevs([dev_dict])
         claim = self._claim()
-        self._set_pci_request(claim)
         claim._test_pci()
+    '''
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_ext_resources(self, mock_get):
+        self._claim()
+        self.assertTrue(self.tracker.ext_resources_handler.test_called)
+        self.assertFalse(self.tracker.ext_resources_handler.usage_is_itype)'''
 
-    def test_abort(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_abort(self, mock_get):
         claim = self._abort()
         self.assertTrue(claim.tracker.icalled)
 
@@ -239,7 +267,6 @@ class ClaimTestCase(test.NoDBTestCase):
 
         return claim
 
-
 class ResizeClaimTestCase(ClaimTestCase):
 
     def setUp(self):
@@ -250,17 +277,20 @@ class ResizeClaimTestCase(ClaimTestCase):
         instance_type = self._fake_instance_type(**kwargs)
         if overhead is None:
             overhead = {'memory_mb': 0}
-        return claims.ResizeClaim(self.instance, instance_type, self.tracker,
-                                  self.resources, overhead=overhead,
-                                  limits=limits)
+        return claims.ResizeClaim('context', self.instance, instance_type,
+                                  self.tracker, self.resources,
+                                  overhead=overhead, limits=limits)
 
-    def _set_pci_request(self, claim):
-        request = [{'count': 1,
-                       'spec': [{'vendor_id': 'v', 'product_id': 'p'}],
-                      }]
-        claim.instance.update(
-            system_metadata={'new_pci_requests': jsonutils.dumps(request)})
+    '''
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_ext_resources(self, mock_get):
+        self._claim()
+        self.assertTrue(self.tracker.ext_resources_handler.test_called)
+        self.assertTrue(self.tracker.ext_resources_handler.usage_is_itype)'''
 
-    def test_abort(self):
+    @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
+                return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    def test_abort(self, mock_get):
         claim = self._abort()
         self.assertTrue(claim.tracker.rcalled)

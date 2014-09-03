@@ -27,10 +27,10 @@ from nova.compute import vm_states
 from nova import db
 from nova import exception
 from nova.openstack.common.gettextutils import _
+from nova import objects
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.openstack.common import timeutils
-from nova.pci import pci_request
 from nova.pci import pci_stats
 from nova.scheduler import filters
 from nova.scheduler import weights
@@ -266,7 +266,7 @@ class HostState(object):
         # update metrics
         self._update_metrics_from_compute_node(compute)
 
-    def consume_from_instance(self, instance):
+    def consume_from_instance(self, context, instance):
         """Incrementally update host state from an instance."""
         disk_mb = (instance['root_gb'] + instance['ephemeral_gb']) * 1024
         ram_mb = instance['memory_mb']
@@ -303,9 +303,10 @@ class HostState(object):
             self.num_instances_by_os_type[os_type] = 0
         self.num_instances_by_os_type[os_type] += 1
 
-        pci_requests = pci_request.get_instance_pci_requests(instance)
-        if pci_requests and self.pci_stats:
-            self.pci_stats.apply_requests(pci_requests)
+        pci_requests = objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid(
+            context, instance['uuid'])
+        if pci_requests.requests and self.pci_stats:
+            self.pci_stats.apply_requests(pci_requests.requests)
 
         vm_state = instance.get('vm_state', vm_states.BUILDING)
         task_state = instance.get('task_state')

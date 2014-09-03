@@ -15,10 +15,14 @@
 """
 Tests For HostManager
 """
+
+import mock
+
 from nova.compute import task_states
 from nova.compute import vm_states
 from nova import db
 from nova import exception
+from nova import objects
 from nova.openstack.common import jsonutils
 from nova.openstack.common import timeutils
 from nova.scheduler import filters
@@ -451,18 +455,54 @@ class HostStateTestCase(test.NoDBTestCase):
         self.assertIsNone(host.pci_stats)
         self.assertEqual(hyper_ver_int, host.hypervisor_version)
 
-    def test_stat_consumption_from_instance(self):
+    def test_stat_consumption_from_compute_node_rescue_unshelving(self):
+        stats = {
+            'num_instances': '5',
+            'num_proj_12345': '3',
+            'num_proj_23456': '1',
+            'num_vm_%s' % vm_states.BUILDING: '2',
+            'num_vm_%s' % vm_states.SUSPENDED: '1',
+            'num_task_%s' % task_states.UNSHELVING: '1',
+            'num_task_%s' % task_states.RESCUING: '2',
+            'num_os_type_linux': '4',
+            'num_os_type_windoze': '1',
+            'io_workload': '42',
+        }
+        stats = jsonutils.dumps(stats)
+
+        hyper_ver_int = utils.convert_version_to_int('6.0.0')
+        compute = dict(stats=stats, memory_mb=0, free_disk_gb=0, local_gb=0,
+                       local_gb_used=0, free_ram_mb=0, vcpus=0, vcpus_used=0,
+                       updated_at=None, host_ip='127.0.0.1',
+                       hypervisor_version=hyper_ver_int)
+
+        host = host_manager.HostState("fakehost", "fakenode")
+        host.update_from_compute_node(compute)
+
+        self.assertEqual(5, host.num_instances)
+        self.assertEqual(42, host.num_io_ops)
+        self.assertEqual(10, len(host.stats))
+
+        self.assertIsNone(host.pci_stats)
+        self.assertEqual(hyper_ver_int, host.hypervisor_version)
+
+    @mock.patch.object(objects.instance_pci_requests.InstancePCIRequests,
+        'get_by_instance_uuid',
+        return_value=objects.instance_pci_requests.InstancePCIRequests(requests=[]))
+    def test_stat_consumption_from_instance(self, mock_pci_req):
         host = host_manager.HostState("fakehost", "fakenode")
 
         instance = dict(root_gb=0, ephemeral_gb=0, memory_mb=0, vcpus=0,
                         project_id='12345', vm_state=vm_states.BUILDING,
-                        task_state=task_states.SCHEDULING, os_type='Linux')
-        host.consume_from_instance(instance)
+                        task_state=task_states.SCHEDULING, os_type='Linux',
+                        uuid='fake-uuid')
+        host.consume_from_instance('fake-context', instance)
 
         instance = dict(root_gb=0, ephemeral_gb=0, memory_mb=0, vcpus=0,
                         project_id='12345', vm_state=vm_states.PAUSED,
-                        task_state=None, os_type='Linux')
-        host.consume_from_instance(instance)
+                        task_state=None, os_type='Linux',
+                        uuid='fake-uuid')
+        host.consume_from_instance('fake-context', instance)
 
         self.assertEqual(2, host.num_instances)
         self.assertEqual(2, host.num_instances_by_project['12345'])
