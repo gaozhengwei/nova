@@ -26,6 +26,7 @@ from nova import exception
 from nova.objects import instance_pci_requests as ins_pci_req_obj
 from nova.pci import pci_manager
 from nova import test
+from nova.tests.pci import pci_fakes
 
 
 class FakeResourceHandler(object):
@@ -196,6 +197,7 @@ class ClaimTestCase(test.NoDBTestCase):
 
     @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
                 return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    @pci_fakes.patch_pci_whitelist
     def test_pci_pass(self, mock_get):
         dev_dict = {
             'compute_node_id': 1,
@@ -210,10 +212,11 @@ class ClaimTestCase(test.NoDBTestCase):
             spec=[{'vendor_id': 'v', 'product_id': 'p'}])
         mock_get.return_value = ins_pci_req_obj.InstancePCIRequests(
             requests=[request])
-        claim._test_pci()
+        self.assertIsNone(claim._test_pci())
 
     @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
                 return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    @pci_fakes.patch_pci_whitelist
     def test_pci_fail(self, mock_get):
         dev_dict = {
             'compute_node_id': 1,
@@ -232,6 +235,7 @@ class ClaimTestCase(test.NoDBTestCase):
 
     @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
                 return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
+    @pci_fakes.patch_pci_whitelist
     def test_pci_pass_no_requests(self, mock_get):
         dev_dict = {
             'compute_node_id': 1,
@@ -243,6 +247,7 @@ class ClaimTestCase(test.NoDBTestCase):
         self.tracker.pci_tracker.set_hvdevs([dev_dict])
         claim = self._claim()
         claim._test_pci()
+
     '''
     @mock.patch('nova.objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid',
                 return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))

@@ -35,6 +35,7 @@ from nova import rpc
 from nova import test
 from nova.tests.compute.monitors import test_monitors
 from nova.tests.objects import test_migration
+from nova.tests.pci import pci_fakes
 from nova.virt import driver
 
 
@@ -61,7 +62,7 @@ class UnsupportedVirtDriver(driver.ComputeDriver):
 
 class FakeVirtDriver(driver.ComputeDriver):
 
-    def __init__(self, pci_support=False):
+    def __init__(self, pci_support=False, stats=None):
         super(FakeVirtDriver, self).__init__(None)
         self.memory_mb = FAKE_VIRT_MEMORY_MB
         self.local_gb = FAKE_VIRT_LOCAL_GB
@@ -82,8 +83,9 @@ class FakeVirtDriver(driver.ComputeDriver):
         self.pci_stats = [{
             'count': 1,
             'vendor_id': 'v1',
-            'product_id': 'p1',
-            'extra_info': {'extra_k1': 'v1'}}] if self.pci_support else []
+            'product_id': 'p1'}] if self.pci_support else []
+        if stats is not None:
+            self.stats = stats
 
     def get_host_ip_addr(self):
         return '127.0.0.1'
@@ -437,7 +439,12 @@ class BaseTrackerTestCase(BaseTestCase):
         self.stubs.Set(db, 'migration_get_in_progress_by_host_and_node',
                 self._fake_migration_get_in_progress_by_host_and_node)
 
-        self.tracker.update_available_resource(self.context)
+        # self.tracker.update_available_resource(self.context)
+        # Note that this must be called before the call to _init_tracker()
+        patcher = pci_fakes.fake_pci_whitelist()
+        self.addCleanup(patcher.stop)
+
+        self._init_tracker()
         self.limits = self._limits()
 
     def _fake_service_get_by_compute_host(self, ctx, host):
@@ -479,6 +486,9 @@ class BaseTrackerTestCase(BaseTestCase):
         migration = self._migrations.values()[0]
         migration.update(values)
         return migration
+
+    def _init_tracker(self):
+        self.tracker.update_available_resource(self.context)
 
     def _limits(self, memory_mb=FAKE_VIRT_MEMORY_MB +
             FAKE_VIRT_MEMORY_OVERHEAD, disk_gb=FAKE_VIRT_LOCAL_GB,

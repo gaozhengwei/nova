@@ -14,10 +14,12 @@
 #    under the License.
 
 from nova import exception
-from nova.objects import pci_device
+from nova.objects import instance_pci_requests as ins_pci_req_obj
+from nova.objects import pci_device as pci_device_obj
 from nova.openstack.common import jsonutils
 from nova.pci import pci_stats as pci
 from nova import test
+from nova.tests.pci import pci_fakes
 
 fake_pci_1 = {
     'compute_node_id': 1,
@@ -38,23 +40,23 @@ fake_pci_2 = dict(fake_pci_1, vendor_id='v2',
 fake_pci_3 = dict(fake_pci_1, address='0000:00:00.3')
 
 
-pci_requests = [{'count': 1,
-                 'spec': [{'vendor_id': 'v1'}]},
-                {'count': 1,
-                 'spec': [{'vendor_id': 'v2'}]}]
+pci_requests = [ins_pci_req_obj.InstancePCIRequest(count=1,
+                    spec=[{'vendor_id': 'v1'}]),
+                ins_pci_req_obj.InstancePCIRequest(count=1,
+                    spec=[{'vendor_id': 'v2'}])]
 
 
-pci_requests_multiple = [{'count': 1,
-                          'spec': [{'vendor_id': 'v1'}]},
-                         {'count': 3,
-                          'spec': [{'vendor_id': 'v2'}]}]
+pci_requests_multiple = [ins_pci_req_obj.InstancePCIRequest(count=1,
+                             spec=[{'vendor_id': 'v1'}]),
+                         ins_pci_req_obj.InstancePCIRequest(count=3,
+                          spec=[{'vendor_id': 'v2'}])]
 
 
 class PciDeviceStatsTestCase(test.NoDBTestCase):
     def _create_fake_devs(self):
-        self.fake_dev_1 = pci_device.PciDevice.create(fake_pci_1)
-        self.fake_dev_2 = pci_device.PciDevice.create(fake_pci_2)
-        self.fake_dev_3 = pci_device.PciDevice.create(fake_pci_3)
+        self.fake_dev_1 = pci_device_obj.PciDevice.create(fake_pci_1)
+        self.fake_dev_2 = pci_device_obj.PciDevice.create(fake_pci_2)
+        self.fake_dev_3 = pci_device_obj.PciDevice.create(fake_pci_3)
 
         map(self.pci_stats.add_device,
             [self.fake_dev_1, self.fake_dev_2, self.fake_dev_3])
@@ -62,6 +64,9 @@ class PciDeviceStatsTestCase(test.NoDBTestCase):
     def setUp(self):
         super(PciDeviceStatsTestCase, self).setUp()
         self.pci_stats = pci.PciDeviceStats()
+        # The following two calls need to be made before adding the devices.
+        patcher = pci_fakes.fake_pci_whitelist()
+        self.addCleanup(patcher.stop)
         self._create_fake_devs()
 
     def test_add_device(self):
