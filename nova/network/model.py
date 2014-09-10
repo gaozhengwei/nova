@@ -35,14 +35,38 @@ VIF_TYPE_IOVISOR = 'iovisor'
 VIF_TYPE_BRIDGE = 'bridge'
 VIF_TYPE_802_QBG = '802.1qbg'
 VIF_TYPE_802_QBH = '802.1qbh'
+VIF_TYPE_HW_VEB = 'hw_veb'
 VIF_TYPE_MLNX_DIRECT = 'mlnx_direct'
 VIF_TYPE_MIDONET = 'midonet'
 VIF_TYPE_OTHER = 'other'
 
 # Constants for dictionary keys in the 'vif_details' field in the VIF
 # class
-VIF_DETAIL_PORT_FILTER = 'port_filter'
-VIF_DETAIL_OVS_HYBRID_PLUG = 'ovs_hybrid_plug'
+VIF_DETAILS_PORT_FILTER = 'port_filter'
+VIF_DETAILS_OVS_HYBRID_PLUG = 'ovs_hybrid_plug'
+VIF_DETAILS_PHYSICAL_NETWORK = 'physical_network'
+
+# The following two constants define the SR-IOV related fields in the
+# 'vif_details'. 'profileid' should be used for VIF_TYPE_802_QBH,
+# 'vlan' for VIF_TYPE_HW_VEB
+VIF_DETAILS_PROFILEID = 'profileid'
+VIF_DETAILS_VLAN = 'vlan'
+
+# Define supported virtual NIC types. VNIC_TYPE_DIRECT and VNIC_TYPE_MACVTAP
+# are used for SR-IOV ports
+VNIC_TYPE_NORMAL = 'normal'
+VNIC_TYPE_DIRECT = 'direct'
+VNIC_TYPE_MACVTAP = 'macvtap'
+
+# Constants for the 'vif_model' values
+VIF_MODEL_VIRTIO = 'virtio'
+VIF_MODEL_NE2K_PCI = 'ne2k_pci'
+VIF_MODEL_PCNET = 'pcnet'
+VIF_MODEL_RTL8139 = 'rtl8139'
+VIF_MODEL_E1000 = 'e1000'
+VIF_MODEL_E1000E = 'e1000e'
+VIF_MODEL_NETFRONT = 'netfront'
+VIF_MODEL_SPAPR_VLAN = 'spapr-vlan'
 
 # Constant for max length of network interface names
 # eg 'bridge' in the Network class or 'devname' in
@@ -261,6 +285,7 @@ class VIF(Model):
     def __init__(self, id=None, address=None, network=None, type=None,
                  details=None, devname=None, ovs_interfaceid=None,
                  qbh_params=None, qbg_params=None, active=False,
+                 vnic_type=VNIC_TYPE_NORMAL, profile=None,
                  **kwargs):
         super(VIF, self).__init__()
 
@@ -275,11 +300,14 @@ class VIF(Model):
         self['qbh_params'] = qbh_params
         self['qbg_params'] = qbg_params
         self['active'] = active
+        self['vnic_type'] = vnic_type
+        self['profile'] = profile
 
         self._set_meta(kwargs)
 
     def __eq__(self, other):
-        keys = ['id', 'address', 'network', 'type', 'details', 'devname',
+        keys = ['id', 'address', 'network', 'vnic_type',
+                'type', 'profile', 'details', 'devname',
                 'ovs_interfaceid', 'qbh_params', 'qbg_params',
                 'active']
         return all(self[k] == other[k] for k in keys)
@@ -330,10 +358,10 @@ class VIF(Model):
         return []
 
     def is_hybrid_plug_enabled(self):
-        return self['details'].get(VIF_DETAIL_OVS_HYBRID_PLUG, False)
+        return self['details'].get(VIF_DETAILS_OVS_HYBRID_PLUG, False)
 
     def is_neutron_filtering_enabled(self):
-        return self['details'].get(VIF_DETAIL_PORT_FILTER, False)
+        return self['details'].get(VIF_DETAILS_PORT_FILTER, False)
 
     @classmethod
     def hydrate(cls, vif):

@@ -61,6 +61,8 @@ pci_alias_opts = [
                    )
 ]
 
+PCI_NET_TAG = 'physical_network'
+
 CONF = cfg.CONF
 CONF.register_opts(pci_alias_opts)
 
