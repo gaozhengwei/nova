@@ -60,6 +60,7 @@ from nova.objects import instance_group as instance_group_obj
 from nova.objects import instance_info_cache
 from nova.objects import keypair as keypair_obj
 from nova.objects import migration as migration_obj
+from nova.objects import network_request as net_req_obj
 from nova.objects import quotas as quotas_obj
 from nova.objects import security_group as security_group_obj
 from nova.objects import service as service_obj
@@ -482,32 +483,41 @@ class API(base.Base):
     def _check_availability_zone_associate_network(self, context,
                                                    availability_zone,
                                                    requested_networks):
-        if not availability_zone and not requested_networks:
+        """Juno's requested_networks was encapsulated NetworkRequestList."""
+        req_nets = requested_networks.objects if requested_networks else []
+        if not availability_zone and not req_nets:
             return None, requested_networks
 
-        if not availability_zone and requested_networks:
-            networks = [net.to_tuple()[0] for net in requested_networks]
+        if not availability_zone and req_nets:
+            networks = [net.network_id for net in req_nets]
             filter_azs = self._availability_zones_get_by_network(
                 context, networks)
             return filter_azs, requested_networks
 
-        if availability_zone and not requested_networks:
+        if availability_zone and not req_nets:
             associate_network = self._get_availability_zone_associate_network(
                 context, availability_zone)
             if associate_network:
-                requested_networks = []
                 for net in associate_network:
-                    requested_networks.append((net, None))
+                    if utils.is_neutron:
+                        req_nets.append(
+                            net_req_obj.NetworkRequest.from_tuple(
+                                [net, None, None]))
+                    else:
+                        req_nets.append(
+                            net_req_obj.NetworkRequest.from_tuple(
+                                [net, None]))
+                requested_networks = net_req_obj.\
+                    NetworkRequestList(objects=req_nets)
         else:
             associate_network = self._get_availability_zone_associate_network(
                 context, availability_zone)
             if associate_network:
-                for net in requested_networks:
-                    if net[0] not in associate_network:
+                for net in req_nets:
+                    if net.network_id not in associate_network:
                         reason = _("Input network %s is not associated with "
                                    "the availability zone.") % net[0]
                         raise exception.InvalidInput(reason=reason)
-
         return None, requested_networks
 
     @staticmethod
@@ -1021,6 +1031,9 @@ class API(base.Base):
         availability_zone, forced_host, forced_node = handle_az(context,
                                                             availability_zone)
 
+        filter_availability_zones, requested_networks = self.\
+            _check_availability_zone_associate_network(context,
+            availability_zone, requested_networks)
         base_options, max_net_count = self._validate_and_build_base_options(
                 context,
                 instance_type, boot_meta, image_href, image_id, kernel_id,
@@ -1042,10 +1055,6 @@ class API(base.Base):
                        {'max_count': max_count,
                         'max_net_count': max_net_count})
             max_count = max_net_count
-
-        # filter_availability_zones, requested_networks = \
-        #    self._check_availability_zone_associate_network(context,
-        #        availability_zone, requested_networks)
 
         block_device_mapping = self._check_and_transform_bdm(
             base_options, boot_meta, min_count, max_count,

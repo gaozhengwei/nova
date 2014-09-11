@@ -22,7 +22,7 @@ from nova.compute import task_states
 from nova.compute import vm_states
 from nova import db
 from nova import exception
-from nova import objects
+from nova.objects import instance_pci_requests as ins_pci_req_obj
 from nova.openstack.common import jsonutils
 from nova.openstack.common import timeutils
 from nova.scheduler import filters
@@ -486,9 +486,9 @@ class HostStateTestCase(test.NoDBTestCase):
         self.assertIsNone(host.pci_stats)
         self.assertEqual(hyper_ver_int, host.hypervisor_version)
 
-    @mock.patch.object(objects.instance_pci_requests.InstancePCIRequests,
+    @mock.patch.object(ins_pci_req_obj.InstancePCIRequests,
         'get_by_instance_uuid',
-        return_value=objects.instance_pci_requests.InstancePCIRequests(requests=[]))
+        return_value=ins_pci_req_obj.InstancePCIRequests(requests=[]))
     def test_stat_consumption_from_instance(self, mock_pci_req):
         host = host_manager.HostState("fakehost", "fakenode")
 

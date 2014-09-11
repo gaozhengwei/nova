@@ -40,7 +40,6 @@ from nova import objects
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.pci import pci_utils
-from nova import utils
 from oslo.config import cfg
 
 pci_alias_opts = [
@@ -183,4 +182,5 @@ def get_pci_requests_from_flavor(flavor):
             'pci_passthrough:alias' in flavor['extra_specs']):
         pci_requests = _translate_alias_to_requests(
             flavor['extra_specs']['pci_passthrough:alias'])
-    return objects.instance_pci_requests.InstancePCIRequests(requests=pci_requests)
+    return objects.instance_pci_requests.\
+        InstancePCIRequests(requests=pci_requests)

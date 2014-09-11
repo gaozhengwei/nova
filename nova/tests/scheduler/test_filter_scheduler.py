@@ -30,7 +30,6 @@ from nova import db
 from nova import exception
 from nova.objects import instance_group as instance_group_obj
 from nova.objects import instance_pci_requests as ins_pci_req_obj
-from nova.pci import pci_request
 from nova.scheduler import driver
 from nova.scheduler import filter_scheduler
 from nova.scheduler import host_manager

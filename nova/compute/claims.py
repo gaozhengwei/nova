@@ -169,8 +169,8 @@ class Claim(NopClaim):
         return self._test(type_, unit, total, used, requested, limit)
 
     def _test_pci(self):
-        pci_requests = ins_pci_req_obj.InstancePCIRequests.get_by_instance_uuid(
-            self.context, self.instance['uuid'])
+        pci_requests = ins_pci_req_obj.InstancePCIRequests.\
+            get_by_instance_uuid(self.context, self.instance['uuid'])
 
         if pci_requests.requests:
             can_claim = self.tracker.pci_tracker.stats.support_requests(

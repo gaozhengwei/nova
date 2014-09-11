@@ -409,8 +409,6 @@ class LibvirtGenericVIFDriver(object):
         else:
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
-        return func(instance, vif, image_meta,
-                    inst_type, virt_type)
 
     def plug_bridge(self, instance, vif):
         """Ensure that the bridge exists, and add VIF to it."""
@@ -538,8 +536,10 @@ class LibvirtGenericVIFDriver(object):
     def plug_mlnx_direct(self, instance, vif):
         vnic_mac = vif['address']
         device_id = instance['uuid']
-        fabric = network['meta']['physical_network']
-
+        fabric = vif.get_physical_network()
+        if not fabric:
+            raise exception.NetworkMissingPhysicalNetwork(
+                network_uuid=vif['network']['id'])
         dev_name = self.get_vif_devname_with_prefix(vif, DEV_PREFIX_ETH)
         try:
             utils.execute('ebrctl', 'add-port', vnic_mac, device_id, fabric,
@@ -625,6 +625,8 @@ class LibvirtGenericVIFDriver(object):
             self.plug_mlnx_direct(instance, vif)
         elif vif_type == network_model.VIF_TYPE_MIDONET:
             self.plug_midonet(instance, vif)
+        elif vif_type == network_model.VIF_TYPE_HW_VEB:
+            self.plug_hw_veb(instance, vif)
         else:
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
@@ -712,12 +714,16 @@ class LibvirtGenericVIFDriver(object):
 
     def unplug_mlnx_direct(self, instance, vif):
         vnic_mac = vif['address']
-        fabric = network['meta']['physical_network']
+        fabric = vif.get_physical_network()
+        if not fabric:
+            raise exception.NetworkMissingPhysicalNetwork(
+                network_uuid=vif['network']['id'])
         try:
             utils.execute('ebrctl', 'del-port', fabric,
                           vnic_mac, run_as_root=True)
         except processutils.ProcessExecutionError:
-            LOG.exception(_("Failed while unplugging vif"), instance=instance)
+            LOG.exception(_("Failed while unplugging vif"),
+                          instance=instance)
 
     def unplug_802qbg(self, instance, vif):
         pass
@@ -794,6 +800,8 @@ class LibvirtGenericVIFDriver(object):
             self.unplug_mlnx_direct(instance, vif)
         elif vif_type == network_model.VIF_TYPE_MIDONET:
             self.unplug_midonet(instance, vif)
+        elif vif_type == network_model.VIF_TYPE_HW_VEB:
+            self.unplug_hw_veb(instance, vif)
         else:
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)

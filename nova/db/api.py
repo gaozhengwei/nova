@@ -882,7 +882,7 @@ def instance_info_cache_delete(context, instance_uuid):
 
 
 def instance_extra_create(context, values):
-    """Create the instance extra data record."""	
+    """Create the instance extra data record."""
     return IMPL.instance_extra_create(context, values)
 
 

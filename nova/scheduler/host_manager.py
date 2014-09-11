@@ -26,8 +26,8 @@ from nova.compute import task_states
 from nova.compute import vm_states
 from nova import db
 from nova import exception
+from nova.objects import instance_pci_requests as ins_pci_req_obj
 from nova.openstack.common.gettextutils import _
-from nova import objects
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.openstack.common import timeutils
@@ -303,8 +303,8 @@ class HostState(object):
             self.num_instances_by_os_type[os_type] = 0
         self.num_instances_by_os_type[os_type] += 1
 
-        pci_requests = objects.instance_pci_requests.InstancePCIRequests.get_by_instance_uuid(
-            context, instance['uuid'])
+        pci_requests = ins_pci_req_obj.InstancePCIRequests.\
+            get_by_instance_uuid(context, instance['uuid'])
         if pci_requests.requests and self.pci_stats:
             self.pci_stats.apply_requests(pci_requests.requests)
 

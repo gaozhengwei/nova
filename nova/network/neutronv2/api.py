@@ -278,6 +278,13 @@ class API(base_api.NetworkAPI):
         ports = {}
         net_ids = []
         ordered_networks = []
+        # NOTE(danms): Remove this in v4.0 of the RPC API
+        if (requested_networks and
+                not isinstance(requested_networks,
+                               net_req_obj.NetworkRequestList)):
+            requested_networks = net_req_obj.NetworkRequestList(
+                objects=[net_req_obj.NetworkRequest.from_tuple(t)
+                         for t in requested_networks])
         if requested_networks:
             for request in requested_networks:
                 if request.port_id:

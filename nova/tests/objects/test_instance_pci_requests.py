@@ -75,15 +75,19 @@ class _TestInstancePCIRequests(object):
         pcir = ins_pci_req_obj.InstancePCIRequests
         mock_get.return_value = ins_pci_req_obj.InstancePCIRequests(
             instance_uuid='fake-uuid',
-            requests=[ins_pci_req_obj.InstancePCIRequest(count=1, is_new=False),
-                      ins_pci_req_obj.InstancePCIRequest(count=2, is_new=True)])
+            requests=[ins_pci_req_obj.InstancePCIRequest(count=1,
+                                                         is_new=False),
+                      ins_pci_req_obj.InstancePCIRequest(count=2,
+                                                         is_new=True)])
         old_req = pcir.get_by_instance_uuid_and_newness(self.context,
                                                         'fake-uuid',
                                                         False)
         mock_get.return_value = ins_pci_req_obj.InstancePCIRequests(
             instance_uuid='fake-uuid',
-            requests=[ins_pci_req_obj.InstancePCIRequest(count=1, is_new=False),
-                      ins_pci_req_obj.InstancePCIRequest(count=2, is_new=True)])
+            requests=[ins_pci_req_obj.InstancePCIRequest(count=1,
+                                                         is_new=False),
+                      ins_pci_req_obj.InstancePCIRequest(count=2,
+                                                         is_new=True)])
         new_req = pcir.get_by_instance_uuid_and_newness(self.context,
                                                         'fake-uuid',
                                                         True)
@@ -106,8 +110,8 @@ class _TestInstancePCIRequests(object):
         }
         instance = instance_obj.Instance(uuid='fake-uuid',
                                     system_metadata=fakesysmeta)
-        requests = ins_pci_req_obj.InstancePCIRequests.get_by_instance(self.context,
-                                                               instance)
+        requests = ins_pci_req_obj.InstancePCIRequests.\
+            get_by_instance(self.context, instance)
         self.assertEqual(2, len(requests.requests))
         self.assertEqual('alias_1', requests.requests[0].alias_name)
         self.assertFalse(requests.requests[0].is_new)

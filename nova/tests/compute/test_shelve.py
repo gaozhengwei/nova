@@ -219,7 +219,8 @@ class ShelveComputeManagerTestCase(test_compute.BaseTestCase):
         db_instance['key_data'] = None
         db_instance['auto_disk_config'] = None
         self.rt.instance_claim(self.context, instance, limits).AndReturn(
-                claims.Claim(self.context, db_instance, self.rt, _fake_resources()))
+                claims.Claim(self.context, db_instance,
+                self.rt, _fake_resources()))
         self.compute.driver.spawn(self.context, instance, image,
                 injected_files=[], admin_password=None,
                 network_info=[],

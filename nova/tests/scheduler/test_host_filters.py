@@ -22,7 +22,7 @@ import stubout
 
 from nova import context
 from nova import db
-from nova import objects
+from nova.objects import instance_pci_requests as ins_pci_req_obj
 from nova.openstack.common import jsonutils
 from nova.openstack.common import timeutils
 from nova.pci import pci_stats
@@ -1693,9 +1693,9 @@ class HostFiltersTestCase(test.NoDBTestCase):
 
     def test_pci_passthrough_pass(self):
         filt_cls = self.class_map['PciPassthroughFilter']()
-        request = objects.instance_pci_requests.InstancePCIRequest(count=1,
+        request = ins_pci_req_obj.InstancePCIRequest(count=1,
             spec=[{'vendor_id': '8086'}])
-        requests = objects.instance_pci_requests.InstancePCIRequests(requests=[request])
+        requests = ins_pci_req_obj.InstancePCIRequests(requests=[request])
         filter_properties = {'pci_requests': requests}
         self.stubs.Set(pci_stats.PciDeviceStats, 'support_requests',
                        self._fake_pci_support_requests)
@@ -1708,9 +1708,9 @@ class HostFiltersTestCase(test.NoDBTestCase):
 
     def test_pci_passthrough_fail(self):
         filt_cls = self.class_map['PciPassthroughFilter']()
-        request = objects.instance_pci_requests.InstancePCIRequest(count=1,
+        request = ins_pci_req_obj.InstancePCIRequest(count=1,
             spec=[{'vendor_id': '8086'}])
-        requests = objects.instance_pci_requests.InstancePCIRequests(requests=[request])
+        requests = ins_pci_req_obj.InstancePCIRequests(requests=[request])
         filter_properties = {'pci_requests': requests}
         self.stubs.Set(pci_stats.PciDeviceStats, 'support_requests',
                        self._fake_pci_support_requests)

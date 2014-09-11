@@ -188,6 +188,7 @@ class FakeVirtDomain(object):
                     </devices>
                 </domain>
             """
+
     def ID(self):
         return self.id
 
@@ -5935,8 +5936,8 @@ class LibvirtConnTestCase(test.TestCase):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
 
         conn._attach_sriov_ports(self.context, instance, domain, network_info)
-        service, image_id = glance.get_remote_image_service(self.context,
-                                                                instance['image_ref'])
+        service, image_id = glance.\
+            get_remote_image_service(self.context, instance['image_ref'])
         mock_get_image_metadata.assert_called_once_with(self.context,
             service, instance['image_ref'], instance)
         self.assertTrue(mock_attachDevice.called)
@@ -5956,8 +5957,8 @@ class LibvirtConnTestCase(test.TestCase):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
 
         conn._attach_sriov_ports(self.context, instance, domain, None)
-        service, image_id = glance.get_remote_image_service(self.context,
-                                                                instance['image_ref'])
+        service, image_id = glance.\
+            get_remote_image_service(self.context, instance['image_ref'])
         mock_get_image_metadata.assert_called_once_with(self.context,
             service, instance['image_ref'], instance)
         self.assertTrue(mock_attachDevice.called)
@@ -5978,8 +5979,8 @@ class LibvirtConnTestCase(test.TestCase):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
 
         conn._detach_sriov_ports(instance, domain)
-        service, image_id = glance.get_remote_image_service(self.context,
-                                                                instance['image_ref'])
+        service, image_id = glance.\
+            get_remote_image_service(self.context, instance['image_ref'])
         mock_get_image_metadata.assert_called_once_with(mock.ANY,
             service, instance['image_ref'], instance)
         self.assertTrue(mock_detachDeviceFlags.called)

@@ -21,6 +21,7 @@ from nova.objects import fields
 from nova.objects import instance
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common import log as logging
+from nova import utils
 
 
 LOG = logging.getLogger(__name__)

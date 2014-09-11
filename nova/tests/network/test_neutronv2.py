@@ -36,10 +36,8 @@ from nova.network.neutronv2 import constants
 from nova.objects import instance_pci_requests as ins_pci_req_obj
 from nova.objects import network_request as net_req_obj
 from nova.openstack.common import jsonutils
-from nova.openstack.common import policy as common_policy
 from nova.pci import pci_manager
 from nova.pci import pci_whitelist
-from nova import policy
 from nova import test
 from nova.tests import fake_instance
 from nova import utils
@@ -2531,7 +2529,7 @@ class TestNeutronv2(TestNeutronv2Base):
         api = neutronapi.API()
         self.mox.ResetAll()
         requested_networks = net_req_obj.NetworkRequestList(
-            objects = [
+            objects=[
                 net_req_obj.NetworkRequest(port_id='my_portid1'),
                 net_req_obj.NetworkRequest(network_id='net1'),
                 net_req_obj.NetworkRequest(port_id='my_portid2'),

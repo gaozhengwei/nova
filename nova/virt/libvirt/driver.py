@@ -71,16 +71,14 @@ from nova.compute import vm_mode
 from nova import context as nova_context
 from nova import exception
 from nova.image import glance
+from nova.network import model as network_model
 from nova.objects import block_device as block_device_obj
 from nova.objects import flavor as flavor_obj
 from nova.objects import instance as instance_obj
 from nova.objects import service as service_obj
-from nova import image
-from nova.network import model as network_model
 from nova.openstack.common import excutils
 from nova.openstack.common import fileutils
 from nova.openstack.common.gettextutils import _
-from nova.openstack.common import importutils
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.openstack.common import loopingcall
@@ -2245,7 +2243,7 @@ class LibvirtDriver(driver.ComputeDriver):
         (state, _max_mem, _mem, _cpus, _t) = dom.info()
         state = LIBVIRT_POWER_STATE[state]
         if state in SHUTDOWN_STATES:
-            LOG.info(_LI("Instance already shutdown."),
+            LOG.info(_("Instance already shutdown."),
                      instance=instance)
             return True
 

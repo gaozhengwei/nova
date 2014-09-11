@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from nova import exception
 from nova.objects import pci_device
 from nova.pci import pci_whitelist
 from nova import test
