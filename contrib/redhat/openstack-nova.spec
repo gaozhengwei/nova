@@ -10,12 +10,6 @@ License:          ASL 2.0
 URL:              http://openstack.org/projects/compute/
 Source0:          https://launchpad.net/nova/icehouse/%{version}/+download/nova-%{version}.tar.gz
 
-Patch0001: 0001-Ensure-we-don-t-access-the-net-when-building-docs.patch
-Patch0002: 0002-remove-runtime-dep-on-python-pbr.patch
-Patch0003: 0003-Revert-Replace-oslo.sphinx-with-oslosphinx.patch
-Patch0004: 0004-notify-calling-process-we-are-ready-to-serve.patch
-Patch0005: 0005-Move-notification-point-to-a-better-place.patch
-
 Source1:          nova-dist.conf
 Source2:          nova.conf.sample
 Source6:          nova.logrotate
@@ -425,12 +419,6 @@ This package contains documentation files for nova.
 
 %prep
 %setup -q -n nova-%{version}
-
-%patch0001 -p1
-%patch0002 -p1
-%patch0003 -p1
-%patch0004 -p1
-%patch0005 -p1
 
 # Apply EPEL patch
 
