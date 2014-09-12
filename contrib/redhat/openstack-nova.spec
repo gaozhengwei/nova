@@ -135,7 +135,6 @@ Requires:         openstack-nova-common = %{version}-%{release}
 Requires:         curl
 Requires:         iscsi-initiator-utils
 Requires:         iptables iptables-ipv6
-Requires:         ipmitool
 Requires:         vconfig
 # tunctl is needed where `ip tuntap` is not available
 Requires:         tunctl
