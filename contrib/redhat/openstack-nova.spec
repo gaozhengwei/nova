@@ -525,7 +525,7 @@ install -p -D -m 640 etc/nova/policy.json %{buildroot}%{_sysconfdir}/nova/policy
 # Install version info file
 cat > %{buildroot}%{_sysconfdir}/nova/release <<EOF
 [Nova]
-vendor = Red Hat Inc.
+vendor = Letv Cloud Computing
 product = OpenStack Nova
 package = %{release}
 EOF
