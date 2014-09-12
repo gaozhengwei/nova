@@ -2,7 +2,7 @@
 
 Name:             openstack-nova
 Version:          2014.1.2
-Release:          1%{?dist}
+Release:          2%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
@@ -884,6 +884,15 @@ fi
 %endif
 
 %changelog
+* Fri Sep 12 2014 Jian Wen <wenjian@letv.com> 2014.1.2-2
+- drop all merged patches
+- Remove compute dependency on ipmitool
+  Related to OPENSTACK-5
+- Change vendor to Letv Cloud Computing
+- Use default injected_network_template
+  Fixes OPENSTACK-135
+- Sync RPM specs from RDO repo
+
 * Mon Aug 11 2014 Vladan Popovic <vpopovic@redhat.com> 2014.1.2-1
 - Update to upstream 2014.1.2
 
