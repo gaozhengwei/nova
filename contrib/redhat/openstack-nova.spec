@@ -2,19 +2,13 @@
 
 Name:             openstack-nova
 Version:          2014.1.2
-Release:          1%{?dist}
+Release:          2%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
 License:          ASL 2.0
 URL:              http://openstack.org/projects/compute/
 Source0:          https://launchpad.net/nova/icehouse/%{version}/+download/nova-%{version}.tar.gz
-
-Patch0001: 0001-Ensure-we-don-t-access-the-net-when-building-docs.patch
-Patch0002: 0002-remove-runtime-dep-on-python-pbr.patch
-Patch0003: 0003-Revert-Replace-oslo.sphinx-with-oslosphinx.patch
-Patch0004: 0004-notify-calling-process-we-are-ready-to-serve.patch
-Patch0005: 0005-Move-notification-point-to-a-better-place.patch
 
 Source1:          nova-dist.conf
 Source2:          nova.conf.sample
@@ -135,7 +129,6 @@ Requires:         openstack-nova-common = %{version}-%{release}
 Requires:         curl
 Requires:         iscsi-initiator-utils
 Requires:         iptables iptables-ipv6
-Requires:         ipmitool
 Requires:         vconfig
 # tunctl is needed where `ip tuntap` is not available
 Requires:         tunctl
@@ -427,12 +420,6 @@ This package contains documentation files for nova.
 %prep
 %setup -q -n nova-%{version}
 
-%patch0001 -p1
-%patch0002 -p1
-%patch0003 -p1
-%patch0004 -p1
-%patch0005 -p1
-
 # Apply EPEL patch
 
 find . \( -name .gitignore -o -name .placeholder \) -delete
@@ -525,7 +512,7 @@ install -p -D -m 640 etc/nova/policy.json %{buildroot}%{_sysconfdir}/nova/policy
 # Install version info file
 cat > %{buildroot}%{_sysconfdir}/nova/release <<EOF
 [Nova]
-vendor = Red Hat Inc.
+vendor = Letv Cloud Computing
 product = OpenStack Nova
 package = %{release}
 EOF
@@ -897,6 +884,15 @@ fi
 %endif
 
 %changelog
+* Fri Sep 12 2014 Jian Wen <wenjian@letv.com> 2014.1.2-2
+- drop all merged patches
+- Remove compute dependency on ipmitool
+  Related to OPENSTACK-5
+- Change vendor to Letv Cloud Computing
+- Use default injected_network_template
+  Fixes OPENSTACK-135
+- Sync RPM specs from RDO repo
+
 * Mon Aug 11 2014 Vladan Popovic <vpopovic@redhat.com> 2014.1.2-1
 - Update to upstream 2014.1.2
 
