@@ -1,8 +1,8 @@
 %global with_doc %{!?_without_doc:1}%{?_without_doc:0}
 
 Name:             openstack-nova
-Version:          2014.1.2
-Release:          2%{?dist}
+Version:          2014.1.3
+Release:          10%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
@@ -884,6 +884,9 @@ fi
 %endif
 
 %changelog
+* Thu Oct 16 2014 Jian Wen <wenjian@letv.com> 2014.1.3-10
+- Update to upstream 2014.1.3
+
 * Fri Sep 12 2014 Jian Wen <wenjian@letv.com> 2014.1.2-2
 - drop all merged patches
 - Remove compute dependency on ipmitool
