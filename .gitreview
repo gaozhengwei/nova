@@ -1,5 +1,4 @@
 [gerrit]
-host=review.openstack.org
+host=10.150.130.22
 port=29418
-project=openstack/nova.git
-defaultbranch=stable/icehouse
+project=icehouse/nova.git
