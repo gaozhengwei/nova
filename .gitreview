@@ -1,4 +1,5 @@
 [gerrit]
-host=10.150.130.22
+host=review.et.letv.com
 port=29418
-project=icehouse/nova.git
+project=iaas/openstack/nova.git
+defaultbranch=icehouse
