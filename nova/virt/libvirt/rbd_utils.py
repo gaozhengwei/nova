@@ -270,5 +270,5 @@ class RBDDriver(object):
         with RADOSClient(self) as client:
             stats = client.cluster.get_cluster_stats()
             return {'total': stats['kb'] * units.Ki,
-                    'free':  stats['kb_avail'] * units.Ki,
-                    'used':  stats['kb_used'] * units.Ki}
+                    'free': stats['kb_avail'] * units.Ki,
+                    'used': stats['kb_used'] * units.Ki}

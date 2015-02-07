@@ -1553,6 +1553,7 @@ class NoLiveMigrationForConfigDriveInLibVirt(NovaException):
                 "supported in libvirt unless libvirt instance path and "
                 "drive data is shared across compute nodes.")
 
+
 class LiveMigrationWithOldNovaNotSafe(NovaException):
     msg_fmt = _("Host %(server)s is running an old version of Nova, "
                 "live migrations involving that version may cause data loss. "
