@@ -2,7 +2,7 @@
 
 Name:             openstack-nova
 Version:          2014.1.3
-Release:          10%{?dist}
+Release:          11%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
@@ -884,6 +884,9 @@ fi
 %endif
 
 %changelog
+* Sun Feb 8 2015 wuxingyi <wuxingyi@letv.com> 2014.1.3-11
+- Support cloning for rbd-backend ephemeral disks
+
 * Thu Oct 16 2014 Jian Wen <wenjian@letv.com> 2014.1.3-10
 - Update to upstream 2014.1.3
 
