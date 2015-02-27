@@ -2,7 +2,7 @@
 
 Name:             openstack-nova
 Version:          2014.1.3
-Release:          11%{?dist}
+Release:          12%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
@@ -884,7 +884,12 @@ fi
 %endif
 
 %changelog
-* Sun Feb 8 2015 wuxingyi <wuxingyi@letv.com> 2014.1.3-11
+* Fri Feb 27 2015 Deliang Fan <fandeliang@letv.com> 2014.1.3-12
+- Remove websocketproxy workaround
+- Update websocketproxy to work with websockify 0.6
+  Related to OPENSTACK-308
+
+* Sun Feb 08 2015 wuxingyi <wuxingyi@letv.com> 2014.1.3-11
 - Support cloning for rbd-backend ephemeral disks
 
 * Thu Oct 16 2014 Jian Wen <wenjian@letv.com> 2014.1.3-10
