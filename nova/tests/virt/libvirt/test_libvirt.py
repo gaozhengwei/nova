@@ -8943,6 +8943,15 @@ class LibvirtDriverTestCase(test.TestCase):
 
     def _test_finish_revert_migration_after_crash(self, backup_made=True,
                                                   del_inst_failed=False):
+
+        def fake_create_domain_and_network(context, xml, instance,
+                                           network_info,
+                                           block_device_info=None,
+                                           power_on=True,
+                                           reboot=False,
+                                           vifs_already_plugged=False):
+            self.assertTrue(vifs_already_plugged)
+
         class FakeLoopingCall:
             def start(self, *a, **k):
                 return self
@@ -8959,7 +8968,7 @@ class LibvirtDriverTestCase(test.TestCase):
         self.stubs.Set(blockinfo, 'get_disk_info', lambda *a: None)
         self.stubs.Set(self.libvirtconnection, 'to_xml', lambda *a, **k: None)
         self.stubs.Set(self.libvirtconnection, '_create_domain_and_network',
-                       lambda *a: None)
+                       fake_create_domain_and_network)
         self.stubs.Set(loopingcall, 'FixedIntervalLoopingCall',
                        lambda *a, **k: FakeLoopingCall())
 
