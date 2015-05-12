@@ -3528,7 +3528,10 @@ class ComputeManager(manager.Manager):
             instance.ephemeral_gb = instance_type['ephemeral_gb']
             instance.system_metadata = sys_meta
             instance.save()
-            resize_instance = True
+
+            for key in ('root_gb', 'swap', 'ephemeral_gb'):
+                if old_instance_type[key] != instance_type[key]:
+                    resize_instance = True
 
         # NOTE(tr3buchet): setup networks on destination host
         self.network_api.setup_networks_on_host(context, instance,
