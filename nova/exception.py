@@ -536,6 +536,20 @@ class VolumeDriverNotFound(NotFound):
     msg_fmt = _("Could not find a handler for %(driver_type)s volume.")
 
 
+class BlockDeviceQoSNotFound(NotFound):
+    msg_fmt = _("Block device QoS %(bdq_id)s could not be found.")
+
+
+class BlockDeviceQoSNotFoundForBDM(NotFound):
+    msg_fmt = _("Block device QoS could not be found for block"
+                " device mapping %(bdm_id)s.")
+
+
+class BlockDeviceQoSExists(Invalid):
+    msg_fmt = _("Block device QoS of block device mapping %(bdm_id)s"
+                " already exists.")
+
+
 class InvalidImageRef(Invalid):
     msg_fmt = _("Invalid image href %(image_href)s.")
 

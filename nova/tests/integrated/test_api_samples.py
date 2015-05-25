@@ -14,6 +14,7 @@
 #    under the License.
 
 import base64
+import contextlib
 import copy
 import datetime
 import inspect
@@ -3855,6 +3856,10 @@ class VolumeAttachmentsSampleJsonTest(VolumeAttachmentsSampleBase):
     extension_name = ("nova.api.openstack.compute.contrib.volumes.Volumes")
 
     def test_attach_volume_to_server(self):
+
+        def fake_block_device_qos_create(context, qos):
+            pass
+
         device_name = '/dev/vdd'
         self.stubs.Set(cinder.API, 'get', fakes.stub_volume_get)
         self.stubs.Set(cinder.API, 'check_attach', lambda *a, **k: None)
@@ -3867,6 +3872,9 @@ class VolumeAttachmentsSampleJsonTest(VolumeAttachmentsSampleBase):
                        lambda *a, **k: None)
         self.stubs.Set(block_device_obj.BlockDeviceMapping, 'get_by_volume_id',
                        classmethod(lambda *a, **k: None))
+
+        self.stubs.Set(db, 'block_device_qos_create',
+                       fake_block_device_qos_create)
 
         volume = fakes.stub_volume_get(None, context.get_admin_context(),
                                        'a26887c6-c47b-4654-abb5-dfadf7d3f803')
@@ -4252,3 +4260,86 @@ class ServerGroupsSampleJsonTest(ServersSampleBase):
 
 class ServerGroupsSampleXmlTest(ServerGroupsSampleJsonTest):
     ctype = 'xml'
+
+
+class QoSBlockDevicesSampleJsonTest(ApiSampleTestBaseV2):
+    extension_name = ('nova.api.openstack.compute.contrib.'
+                      'qos_block_devices.Qos_block_devices')
+
+    def _get_flags(self):
+        f = super(QoSBlockDevicesSampleJsonTest, self)._get_flags()
+        f['osapi_compute_extension'] = CONF.osapi_compute_extension[:]
+        return f
+
+    def setUp(self):
+        super(QoSBlockDevicesSampleJsonTest, self).setUp()
+
+    def test_qos_block_devices_index(self):
+        instance = {'uuid': '8ab0e5b9-d87a-457e-ae58-9f4bb22e8c3d', }
+        bdms = [{'id': 18, 'device_name': '/dev/vda'}, ]
+        qos_ref = {'id': 18,
+                   'total_bps': 0,
+                   'total_iops': 0,
+                   'read_bps': 10000,
+                   'write_bps': 10000,
+                   'block_device_mapping_id': 18,
+                   'read_iops': 50,
+                   'write_iops': 50,
+                   'deleted': 0}
+        with contextlib.nested(
+                mock.patch.object(compute_api.API,
+                                  'get', return_value=instance),
+                mock.patch.object(block_device_obj.BlockDeviceMappingList,
+                                  'get_by_instance_uuid',
+                                  return_value=bdms),
+                mock.patch.object(db,
+                        'block_device_qos_get_by_block_device_mapping_id',
+                                  return_value=qos_ref)):
+            expected = {"qos_block_devices": [{'id': 18,
+                                               'total_bps': 0,
+                                               'total_iops': 0,
+                                               'read_bps': 10000,
+                                               'write_bps': 10000,
+                                               'block_device_mapping_id': 18,
+                                               'read_iops': 50,
+                                               'write_iops': 50,
+                                               'device_name': '/dev/vda', },
+                                              ], }
+            response = self._do_get(
+                'servers/%s/os-qos-block-devices' % instance['uuid'])
+            subs = self._get_regexes()
+            self._verify_response('qos-block-devices-list-resp',
+                                  subs, response, 200)
+
+    def test_qos_block_devices_update(self):
+        instance = {'uuid': '8ab0e5b9-d87a-457e-ae58-9f4bb22e8c3d', }
+        bdms = [{'id': 18, 'device_name': '/dev/vda', },
+                {'id': 20}]
+        qos_ref = {'id': 28,
+                   'total_bps': 0,
+                   'total_iops': 0,
+                   'read_bps': 1000000,
+                   'write_bps': 1000000,
+                   'block_device_mapping_id': 18,
+                   'read_iops': 50,
+                   'write_iops': 50,
+                   'deleted': 0, }
+        with contextlib.nested(
+                mock.patch.object(compute_api.API,
+                                  'get', return_value=instance),
+                mock.patch.object(db,
+                            'block_device_qos_get_by_block_device_mapping_id',
+                                return_value=qos_ref),
+                mock.patch.object(db,
+                                  'block_device_mapping_get_all_by_instance',
+                                   return_value=bdms),
+                mock.patch.object(compute_api.API,
+                                  'update_block_device_qos')
+        ) as (_, _, _, update_blk_dev_qos):
+            response = self._do_put(
+                'servers/%s/os-qos-block-devices/18' % instance['uuid'],
+                'qos-block-devices-update-req',
+                {})
+            subs = self._get_regexes()
+            self._verify_response('qos-block-devices-update-resp',
+                                  subs, response, 200)

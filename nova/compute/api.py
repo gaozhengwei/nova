@@ -1123,10 +1123,35 @@ class API(base.Base):
                 continue
 
             bdm['instance_uuid'] = instance_uuid
+            bdm_ref = self.db.block_device_mapping_update_or_create(
+                elevated_context, bdm, legacy=False)
 
-            self.db.block_device_mapping_update_or_create(elevated_context,
-                                                          bdm,
-                                                          legacy=False)
+            # TODO(wenjianhn): support multiple qos settings in extra_specs.
+            qos = {}
+            for key, value in instance_type['extra_specs'].iteritems():
+                scope = key.split(':')
+                if len(scope) > 1 and scope[0] == 'quota':
+                    if scope[1] == 'disk_read_bytes_sec':
+                        qos['read_bps'] = value
+                    elif scope[1] == 'disk_write_bytes_sec':
+                        qos['write_bps'] = value
+                    elif scope[1] == 'disk_read_iops_sec':
+                        qos['read_iops'] = value
+                    elif scope[1] == 'disk_write_iops_sec':
+                        qos['write_iops'] = value
+                    elif scope[1] == 'disk_total_iops_sec':
+                        qos['total_iops'] = value
+                    elif scope[1] == 'disk_total_bps_sec':
+                        qos['total_bps'] = value
+            qos['block_device_mapping_id'] = bdm_ref['id']
+            self.db.block_device_qos_create(elevated_context, qos)
+
+    @wrap_check_policy
+    def update_block_device_qos(self, context, instance, bdm_id, qos):
+        qos_ref = self.db.block_device_qos_get_by_block_device_mapping_id(
+            context, bdm_id)
+        self.db.block_device_qos_update_by_id(context, qos_ref['id'], qos)
+        self.compute_rpcapi.update_block_device_qos(context, instance, bdm_id)
 
     def _validate_bdm(self, context, instance, instance_type, all_mappings):
         def _subsequent_list(l):
@@ -2823,6 +2848,15 @@ class API(base.Base):
         except Exception:
             with excutils.save_and_reraise_exception():
                 volume_bdm.destroy(context)
+
+        # NOTE: init cinder volume qos.
+        qos = {}
+        for key in ('read_bps', 'write_bps', 'total_bps', 'read_iops',
+                    'write_iops' 'total_iops'):
+            qos[key] = 0
+        if volume_bdm:
+            qos['block_device_mapping_id'] = volume_bdm.id
+        self.db.block_device_qos_create(context, qos)
 
         return device
 

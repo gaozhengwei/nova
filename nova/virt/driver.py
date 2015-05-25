@@ -103,6 +103,11 @@ def block_device_info_get_mapping(block_device_info):
     return block_device_mapping
 
 
+def block_device_info_get_qos(block_device_info):
+    block_device_info = block_device_info or {}
+    return block_device_info.get('qos')
+
+
 class ComputeDriver(object):
     """Base class for compute drivers.
 
@@ -448,6 +453,10 @@ class ComputeDriver(object):
 
         :param instance: nova.objects.instance.Instance
         """
+        raise NotImplementedError()
+
+    def update_block_device_qos(self, instance, qos):
+        """Update instance's block device QoS."""
         raise NotImplementedError()
 
     def migrate_disk_and_power_off(self, context, instance, dest,

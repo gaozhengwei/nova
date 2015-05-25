@@ -1220,6 +1220,29 @@ def block_device_mapping_destroy_by_instance_and_volume(context, instance_uuid,
 ####################
 
 
+def block_device_qos_create(context, values):
+    return IMPL.block_device_qos_create(context, values)
+
+
+def block_device_qos_get_by_id(context, id):
+    return IMPL.block_device_qos_get_by_id(context, id)
+
+
+def block_device_qos_get_by_block_device_mapping_id(context, id):
+    return IMPL.block_device_qos_get_by_block_device_mapping_id(context, id)
+
+
+def block_device_qos_update_by_id(context, id, values):
+    return IMPL.block_device_qos_update_by_id(context, id, values)
+
+
+def block_device_qos_delete_by_block_device_mapping_id(context, id):
+    return IMPL.block_device_qos_delete_by_block_device_mapping_id(context, id)
+
+
+###################
+
+
 def security_group_get_all(context):
     """Get all security groups."""
     return IMPL.security_group_get_all(context)

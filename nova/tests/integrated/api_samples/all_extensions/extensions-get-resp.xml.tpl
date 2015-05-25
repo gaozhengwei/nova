@@ -168,6 +168,9 @@
   <extension alias="os-networks-associate" updated="%(timestamp)s" namespace="http://docs.openstack.org/compute/ext/networks_associate/api/v2" name="NetworkAssociationSupport">
     <description>%(text)s</description>
   </extension>
+  <extension alias="os-qos-block-devices" updated="%(timestamp)s" namespace="http://docs.openstack.org/compute/ext/qos-block-devices/api/v2" name="QoSBlockDevices">
+  <description>%(text)s</description>
+  </extension>
   <extension alias="os-quota-class-sets" updated="%(timestamp)s" namespace="http://docs.openstack.org/compute/ext/quota-classes-sets/api/v1.1" name="QuotaClasses">
     <description>%(text)s</description>
   </extension>

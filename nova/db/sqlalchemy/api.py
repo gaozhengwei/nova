@@ -37,6 +37,7 @@ from sqlalchemy import Integer
 from sqlalchemy import MetaData
 from sqlalchemy import or_
 from sqlalchemy.orm import contains_eager
+from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import joinedload_all
 from sqlalchemy.orm import noload
@@ -3588,6 +3589,57 @@ def block_device_mapping_destroy_by_instance_and_device(context, instance_uuid,
 
 
 ###################
+
+
+def _block_device_qos_query(context):
+    return model_query(context, models.BlockDeviceQoS)
+
+
+@require_context
+def block_device_qos_create(context, values):
+    blk_dev_qos_ref = models.BlockDeviceQoS()
+    blk_dev_qos_ref.update(values)
+    try:
+        blk_dev_qos_ref.save()
+    except db_exc.DBDuplicateEntry:
+        raise exception.BlockDeviceQoSExists(
+            bdm_id=values['block_device_mapping_id'])
+    return blk_dev_qos_ref
+
+
+@require_context
+def block_device_qos_get_by_id(context, id):
+    try:
+        return _block_device_qos_query(context).filter_by(id=id).one()
+    except NoResultFound:
+        raise exception.BlockDeviceQoSNotFound(bdq_id=id)
+
+
+@require_context
+def block_device_qos_get_by_block_device_mapping_id(context, id):
+    try:
+        return _block_device_qos_query(context).filter_by(
+            block_device_mapping_id=id).one()
+    except NoResultFound:
+        raise exception.BlockDeviceQoSNotFoundForBDM(bdm_id=id)
+
+
+@require_admin_context
+def block_device_qos_update_by_id(context, id, values):
+    blk_dev_qos_ref = block_device_qos_get_by_id(context, id)
+    blk_dev_qos_ref.update(values)
+    blk_dev_qos_ref.save()
+    return blk_dev_qos_ref
+
+
+@require_context
+def block_device_qos_delete_by_block_device_mapping_id(context, id):
+    _block_device_qos_query(context).filter_by(
+        block_device_mapping_id=id).soft_delete()
+
+
+###################
+
 
 def _security_group_create(context, values, session=None):
     security_group_ref = models.SecurityGroup()

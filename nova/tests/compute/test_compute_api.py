@@ -13,6 +13,7 @@
 
 """Unit tests for compute API."""
 
+import contextlib
 import copy
 import datetime
 import iso8601
@@ -1586,8 +1587,13 @@ class _ComputeAPIUnitTestMixIn(object):
         def fake_volume_create_snapshot(context, volume_id, name, description):
             return {'id': '%s-snapshot' % volume_id}
 
+        def fake_get_qos_by_id(context, id):
+            return None
+
         self.stubs.Set(db, 'block_device_mapping_get_all_by_instance',
                        fake_get_all_by_instance)
+        self.stubs.Set(db, 'block_device_qos_get_by_block_device_mapping_id',
+                       fake_get_qos_by_id)
         self.stubs.Set(self.compute_api.image_service, 'create',
                        fake_image_create)
         self.stubs.Set(self.compute_api.volume_api, 'get',
@@ -1915,6 +1921,32 @@ class _ComputeAPIUnitTestMixIn(object):
                           self.context, instance,
                           volume_id, new_volume_id)
 
+    def test_update_block_device_mapping_create_blk_dev_qos(self):
+        extra_specs = {'quota:disk_read_bytes_sec': 300000,
+                       'quota:disk_write_bytes_sec': 400000,
+                       'quota:disk_read_iops_sec': 300,
+                       'quota:disk_write_iops_sec': 400, }
+        instance_type = self._create_flavor(dict(extra_specs=extra_specs))
+        bdm = {'device_name': '/dev/vda',
+               'source_type': 'image',
+               'destination_type': 'local',
+               'device_type': 'disk',
+               'volume_size': None,
+               'id': 123, }
+        with contextlib.nested(
+                mock.patch.object(db, 'block_device_mapping_update_or_create',
+                                  return_value=bdm),
+                mock.patch.object(db, 'block_device_qos_create')
+        ) as (_, blk_dev_qos_create):
+            self.compute_api._update_block_device_mapping(
+                self.context, instance_type, 'uuid', [bdm])
+            qos = {'read_bps': 300000,
+                   'write_bps': 400000,
+                   'read_iops': 300,
+                   'write_iops': 400,
+                   'block_device_mapping_id': 123, }
+            blk_dev_qos_create.assert_called_once_with(mock.ANY, qos)
+
 
 class ComputeAPIUnitTestCase(_ComputeAPIUnitTestMixIn, test.NoDBTestCase):
     def setUp(self):
@@ -1925,6 +1957,30 @@ class ComputeAPIUnitTestCase(_ComputeAPIUnitTestMixIn, test.NoDBTestCase):
     def test_resize_same_flavor_fails(self):
         self.assertRaises(exception.CannotResizeToSameFlavor,
                           self._test_resize, same_flavor=True)
+
+    def test_update_block_device_qos(self):
+        rpcapi = self.compute_api.compute_rpcapi
+        instance = self._create_instance_obj()
+        qos = {'read_bps': 300000,
+               'write_bps': 400000,
+               'read_iops': 300,
+               'write_iops': 400, }
+
+        with contextlib.nested(
+                mock.patch.object(
+                    db, 'block_device_qos_get_by_block_device_mapping_id',
+                    return_value={'id': 23, }),
+                mock.patch.object(db, 'block_device_qos_update_by_id'),
+                mock.patch.object(rpcapi,
+                                  'update_block_device_qos')
+        ) as (_, blk_dev_qos_udpate_by_id, rpc_update_blk_dev_qos):
+            admin_context = context.get_admin_context()
+            self.compute_api.update_block_device_qos(
+                admin_context, instance, 234, qos)
+            blk_dev_qos_udpate_by_id.assert_called_once_with(
+                admin_context, 23, qos)
+            rpc_update_blk_dev_qos.assert_called_once_with(
+                admin_context, instance, 234)
 
 
 class ComputeAPIAPICellUnitTestCase(_ComputeAPIUnitTestMixIn,

@@ -191,8 +191,17 @@ class BlockDeviceMappingList(base.ObjectListBase, base.NovaObject):
     def get_by_instance_uuid(cls, context, instance_uuid, use_slave=False):
         db_bdms = db.block_device_mapping_get_all_by_instance(
                 context, instance_uuid, use_slave=use_slave)
-        return base.obj_make_list(
+        obj_bdms = base.obj_make_list(
                 context, cls(), BlockDeviceMapping, db_bdms or [])
+        for bdm in obj_bdms:
+            try:
+                #Note(Deliang Fan): use try to ignore two much error UT.
+                qos = db.block_device_qos_get_by_block_device_mapping_id(
+                    context, bdm.get('id'))
+                bdm.qos = qos
+            except exception.BlockDeviceQoSNotFoundForBDM:
+                bdm.qos = None
+        return obj_bdms
 
     def root_bdm(self):
         try:

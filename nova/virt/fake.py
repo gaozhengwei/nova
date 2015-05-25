@@ -255,6 +255,9 @@ class FakeDriver(driver.ComputeDriver):
         except KeyError:
             raise exception.InterfaceDetachFailed('not attached')
 
+    def update_block_device_qos(self, instance, qos):
+        pass
+
     def get_info(self, instance):
         if instance['name'] not in self.instances:
             raise exception.InstanceNotFound(instance_id=instance['name'])
@@ -465,6 +468,9 @@ class FakeDriver(driver.ComputeDriver):
 
     def list_instance_uuids(self):
         return []
+
+    def is_qemu_support_blockio_throttling(self):
+        pass
 
 
 class FakeVirtAPI(virtapi.VirtAPI):

@@ -22,6 +22,8 @@
     "compute:volume_snapshot_create": "",
     "compute:volume_snapshot_delete": "",
 
+    "compute:update_block_device_qos": "rule:admin_api",
+
     "admin_api": "is_admin:True",
     "compute:v3:servers:start": "rule:admin_or_owner",
     "compute:v3:servers:stop": "rule:admin_or_owner",
@@ -239,6 +241,8 @@
     "compute_extension:users": "rule:admin_api",
     "compute_extension:v3:os-user-data:discoverable": "",
     "compute_extension:virtual_interfaces": "",
+    "compute_extension:qos_block_devices:index": "",
+    "compute_extension:qos_block_devices:update": "rule:admin_api",
     "compute_extension:virtual_storage_arrays": "",
     "compute_extension:volumes": "",
     "compute_extension:volume_attachments:index": "",

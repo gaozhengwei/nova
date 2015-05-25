@@ -227,6 +227,9 @@ class FakeVirtDomain(object):
     def resume(self):
         pass
 
+    def setBlockIoTune(self, device_name, params, flags):
+        pass
+
 
 class CacheConcurrencyTestCase(test.TestCase):
     def setUp(self):
@@ -1101,6 +1104,32 @@ class LibvirtConnTestCase(test.TestCase):
         self.assertTrue(info['block_device_mapping'][0].save.called)
         self.assertTrue(info['block_device_mapping'][1].save.called)
 
+    def test_get_guest_config_with_block_device_qos(self):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+
+        instance_ref = db.instance_create(self.context, self.test_instance)
+        block_device_info = {'block_device_mapping': [],
+                             'qos': {'read_bps': 0,
+                                     'total_iops': 0,
+                                     'write_iops': 40,
+                                     'read_iops': 60,
+                                     'write_bps': 0,
+                                     'total_bps': 0},
+                             'root_device_name': '/dev/vda',
+                             'ephemerals': [],
+                             'swap': None}
+        disk_info = blockinfo.get_disk_info(CONF.libvirt.virt_type,
+                                            instance_ref, block_device_info)
+        cfg = conn.get_guest_config(instance_ref, [], None, disk_info,
+                                    None, block_device_info)
+
+        self.assertEqual(cfg.devices[0].disk_read_bytes_sec, 0)
+        self.assertEqual(cfg.devices[0].disk_read_iops_sec, 60)
+        self.assertEqual(cfg.devices[0].disk_write_bytes_sec, 0)
+        self.assertEqual(cfg.devices[0].disk_write_iops_sec, 40)
+        self.assertEqual(cfg.devices[0].disk_total_bytes_sec, 0)
+        self.assertEqual(cfg.devices[0].disk_total_iops_sec, 0)
+
     def test_get_guest_config_with_configdrive(self):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
         instance_ref = db.instance_create(self.context, self.test_instance)
@@ -1869,6 +1898,62 @@ class LibvirtConnTestCase(test.TestCase):
                               instance_ref,
                               [],
                               image_meta, disk_info)
+
+    def test_get_guest_disk_config_with_cgroup_qos(self):
+        instance = db.instance_create(self.context, self.test_instance)
+        disk_mapping = {'disk': {'bus': 'virtio',
+                                 'type': 'disk',
+                                 'dev': 'vda'},
+                        'root': {'bus': 'virtio',
+                                 'type': 'disk',
+                                 'dev': 'vda'}}
+        inst_type = {'extra_specs': {}}
+        qos = {'read_bps': 0,
+               'total_iops': 0,
+               'write_iops': 40,
+               'read_iops': 60,
+               'write_bps': 0,
+               'total_bps': 0}
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        with contextlib.nested(
+                mock.patch.object(conn, '_is_qemu_support_blockio_throttling',
+                                  return_value=False)
+        ):
+            disk_cfg = conn.get_guest_disk_config(instance, 'disk',
+                                                  disk_mapping, inst_type, qos)
+            for attr in ('disk_read_bytes_sec', 'disk_read_iops_sec',
+                         'disk_write_bytes_sec', 'disk_write_iops_sec',
+                         'disk_total_bytes_sec', 'disk_total_iops_sec'):
+                self.assertIsNone(getattr(disk_cfg, attr, None))
+
+    def test_get_guest_disk_config_with_qemu_qos(self):
+        instance = db.instance_create(self.context, self.test_instance)
+        disk_mapping = {'disk': {'bus': 'virtio',
+                                 'type': 'disk',
+                                 'dev': 'vda'},
+                        'root': {'bus': 'virtio',
+                                 'type': 'disk',
+                                 'dev': 'vda'}}
+        inst_type = {'extra_specs': {}}
+        qos = {'read_bps': 0,
+               'total_iops': 0,
+               'write_iops': 40,
+               'read_iops': 60,
+               'write_bps': 0,
+               'total_bps': 0}
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        with contextlib.nested(
+                mock.patch.object(conn, '_is_qemu_support_blockio_throttling',
+                                  return_value=True)
+        ):
+            disk_cfg = conn.get_guest_disk_config(instance, 'disk',
+                                                  disk_mapping, inst_type, qos)
+            self.assertEqual(disk_cfg.disk_read_bytes_sec, 0)
+            self.assertEqual(disk_cfg.disk_read_iops_sec, 60)
+            self.assertEqual(disk_cfg.disk_write_bytes_sec, 0)
+            self.assertEqual(disk_cfg.disk_write_iops_sec, 40)
+            self.assertEqual(disk_cfg.disk_total_bytes_sec, 0)
+            self.assertEqual(disk_cfg.disk_total_iops_sec, 0)
 
     def _create_fake_service_compute(self):
         service_info = {
@@ -4772,6 +4857,48 @@ class LibvirtConnTestCase(test.TestCase):
         instance['pci_devices'] = [{'address': '0000:00:00.0'}]
 
         conn.spawn(self.context, instance, None, [], None)
+
+    def _test_spawn_with_disk_qos(self, qemu_disk_qos):
+        def fake_none(*args, **kwargs):
+            return
+
+        def fake_create_image(*args, **kwargs):
+            return
+
+        def fake_get_info(instance):
+            return {'state': power_state.RUNNING}
+
+        instance_ref = self.test_instance
+        instance_ref['image_ref'] = 1
+        instance = db.instance_create(self.context, instance_ref)
+
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        self.stubs.Set(conn, 'to_xml', fake_none)
+        self.stubs.Set(conn, '_create_image', fake_create_image)
+        self.stubs.Set(conn, '_create_domain_and_network', fake_none)
+        self.stubs.Set(conn, 'get_info', fake_get_info)
+
+        block_device_info = {'root_device_name': '/dev/vda',
+                             'block_device_mapping': [],
+                             'qos': {'write_iops': 300, }, }
+        with contextlib.nested(
+                mock.patch.object(conn, 'update_block_device_qos'),
+                mock.patch.object(conn, '_is_qemu_support_blockio_throttling',
+                                  return_value=qemu_disk_qos),
+        ) as (update_blk_qos, _):
+            conn.spawn(self.context, instance, {'id': instance['image_ref']},
+                       [], None, block_device_info=block_device_info)
+            if not qemu_disk_qos:
+                update_blk_qos.assert_called_once_with(
+                    instance, block_device_info['qos'])
+            else:
+                self.assertFalse(update_blk_qos.called)
+
+    def test_spawn_with_qemu_disk_qos(self):
+        self._test_spawn_with_disk_qos(qemu_disk_qos=True)
+
+    def test_spawn_with_cgroup_disk_qos(self):
+        self._test_spawn_with_disk_qos(qemu_disk_qos=False)
 
     def test_chown_disk_config_for_instance(self):
         conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
@@ -9086,6 +9213,113 @@ class LibvirtDriverTestCase(test.TestCase):
         self._test_attach_detach_interface(
             'detach_interface', power_state.SHUTDOWN,
             expected_flags=(libvirt.VIR_DOMAIN_AFFECT_CONFIG))
+
+    def _test_update_block_device_qos_works(self, qos, running):
+        instance = {'name': 'instance-0000000001',
+                    'uuid': 'uuid', }
+        device_name = "/dev/vda"
+        short_device_name = 'vda'
+
+        expected_params = {'total_bytes_sec': qos['total_bps'],
+                           'total_iops_sec': qos['total_iops'],
+                           'write_bytes_sec': qos['write_bps'],
+                           'read_iops_sec': qos['read_iops'],
+                           'read_bytes_sec': qos['read_bps'],
+                           'write_iops_sec': qos['write_iops']}
+
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        with contextlib.nested(
+                mock.patch.object(conn, '_is_qemu_support_blockio_throttling',
+                                  return_value=True),
+                mock.patch.object(FakeVirtDomain, 'setBlockIoTune'),
+                mock.patch.object(conn, '_lookup_by_name',
+                                  return_value=FakeVirtDomain())
+        ) as (_, set_Iothrottle, _):
+            conn.update_block_device_qos(instance, qos, device_name)
+
+            calls = [mock.call(short_device_name, expected_params,
+                               libvirt.VIR_DOMAIN_AFFECT_CONFIG), ]
+            if running:
+                calls.append(mock.call(short_device_name, expected_params,
+                                       libvirt.VIR_DOMAIN_AFFECT_LIVE))
+            set_Iothrottle.assert_has_calls(calls)
+
+    def test_update_block_device_qos_set_works_running(self):
+        qos = {'total_bps': 0,
+               'total_iops': 0,
+               'read_bps': 300000,
+               'write_bps': 400000,
+               'read_iops': 300,
+               'write_iops': 400}
+        self._test_update_block_device_qos_works(qos, True)
+
+    def test_update_block_device_qos_set_works_notrunning(self):
+        qos = {'total_bps': 0,
+               'total_iops': 0,
+               'read_bps': 300000,
+               'write_bps': 400000,
+               'read_iops': 300,
+               'write_iops': 400, }
+        self._test_update_block_device_qos_works(qos, False)
+
+    def test_update_block_device_qos_clear_works_running(self):
+        qos = {'total_bps': 0,
+               'total_iops': 0,
+               'read_bps': 0,
+               'write_bps': 0,
+               'read_iops': 0,
+               'write_iops': 0, }
+        self._test_update_block_device_qos_works(qos, True)
+
+    def test_update_block_device_qos_clear_works_notrunning(self):
+        qos = {'total_bps': 0,
+               'total_iops': 0,
+               'read_bps': 0,
+               'write_bps': 0,
+               'read_iops': 0,
+               'write_iops': 0, }
+        self._test_update_block_device_qos_works(qos, False)
+
+    def test_update_block_device_qos_cgroup(self):
+        conn = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
+        instance = {'name': 'intance-0000000001',
+                    'uuid': 'uuid', }
+        qos = {'read_bps': 300000,
+               'write_bps': 400000,
+               'read_iops': 0,
+               'write_iops': 400, }
+
+        def fake_execute(cmd, path, process_input, run_as_root):
+            self.assertEqual('tee', cmd)
+            opts = ('blkio.throttle.read_bps_device',
+                    'blkio.throttle.write_bps_device',
+                    'blkio.throttle.read_iops_device',
+                    'blkio.throttle.write_iops_device', )
+            for opt in opts:
+                if path.endswith(opt):
+                    self.assertEqual("/cgroup/blkio/libvirt/qemu/%s/%s" % (
+                                     instance['name'], opt),
+                                     path)
+            if path.endswith(opts[0]):
+                self.assertIsNotNone(re.match("\d+:\d %s" % 300000,
+                                              process_input))
+            elif path.endswith(opts[1]):
+                self.assertIsNotNone(re.match("\d+:\d %s" % 400000,
+                                              process_input))
+            elif path.endswith(opts[2]):
+                self.assertIsNotNone(re.match("\d+:\d %s" % 0,
+                                              process_input))
+            elif path.endswith(opts[3]):
+                self.assertIsNotNone(re.match("\d+:\d %s" % 400,
+                                              process_input))
+            self.assertTrue(run_as_root)
+
+        with contextlib.nested(
+                mock.patch.object(conn, '_is_qemu_support_blockio_throttling',
+                                 return_value=False),
+                mock.patch.object(utils, 'execute', side_effect=fake_execute),
+        ):
+            conn.update_block_device_qos(instance, qos)
 
 
 class LibvirtVolumeUsageTestCase(test.TestCase):

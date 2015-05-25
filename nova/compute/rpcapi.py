@@ -241,6 +241,7 @@ class ComputeAPI(object):
         3.21 - Made rebuild take new-world BDM objects
         3.22 - Made terminate_instance take new-world BDM objects
         3.23 - Added external_instance_event()
+        3.24 - Added update_block_device_qos()
     '''
 
     VERSION_ALIASES = {
@@ -407,6 +408,19 @@ class ComputeAPI(object):
                 version=version)
         cctxt.cast(ctxt, 'detach_interface',
                    instance=instance, port_id=port_id)
+
+    def update_block_device_qos(self, ctxt, instance, bdm_id):
+        if self.client.can_send_version('3.24'):
+            version = '3.24'
+        else:
+            # NOTE(russellb) Havana compat
+            version = self._get_compat_version('3.0', '2.0')
+            instance = jsonutils.to_primitive(instance)
+        instance_p = jsonutils.to_primitive(instance)
+        cctxt = self.client.prepare(server=_compute_host(None, instance),
+                                    version=version)
+        cctxt.cast(ctxt, 'update_block_device_qos',
+                   instance=instance_p, bdm_id=bdm_id)
 
     def detach_volume(self, ctxt, instance, volume_id):
         # NOTE(russellb) Havana compat

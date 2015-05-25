@@ -135,6 +135,10 @@ interval_opts = [
                default=60,
                help="Number of seconds between instance info_cache self "
                     "healing updates"),
+    cfg.IntOpt("heal_instance_block_device_qos_interval",
+               default=60,
+               help="Number of seconds between instance block device cgroup "
+                    "qos self healing updates"),
     cfg.IntOpt('reclaim_instance_interval',
                default=0,
                help='Interval in seconds for reclaiming deleted instances'),
@@ -565,7 +569,7 @@ class ComputeVirtAPI(virtapi.VirtAPI):
 class ComputeManager(manager.Manager):
     """Manages the running instances from creation to destruction."""
 
-    target = messaging.Target(version='3.23')
+    target = messaging.Target(version='3.24')
 
     def __init__(self, compute_driver=None, *args, **kwargs):
         """Load configuration options and connect to the hypervisor."""
@@ -1714,6 +1718,14 @@ class ComputeManager(manager.Manager):
             # Get swap out of the list
             block_device_info['swap'] = driver_block_device.get_swap(
                 block_device_info['swap'])
+
+            for bdm in bdms:
+                # TODO(wenjianhn): support multiple devices when using Cinder.
+                # Note(fandeliang): need the system disk qos for now.
+                if hasattr(bdm, 'qos'):
+                    block_device_info['qos'] = bdm.qos
+                else:
+                    block_device_info['qos'] = None
             return block_device_info
 
         except Exception:
@@ -4413,6 +4425,38 @@ class ComputeManager(manager.Manager):
         self.network_api.deallocate_port_for_instance(context, instance,
                                                       port_id)
         self.driver.detach_interface(instance, condemned)
+
+    @periodic_task.periodic_task(spacing=
+                                 CONF.heal_instance_block_device_qos_interval)
+    def _heal_instance_block_device_qos(self, context):
+        """Called periodically to set the instances' cgroup configurations.
+
+        Until qemu 1.1, we can't store the blkio throttle info in the
+        libvirt xml file. After a user reboots his instance, the cgroup
+        configurations will be gone. We need to recreate them.
+        """
+        filters = {'vm_state': vm_states.ACTIVE,
+                   'host': self.host}
+        instances = self.conductor_api.instance_get_all_by_filters(
+            context, filters, columns_to_join=[])
+        for instance in instances:
+            bdms = self.conductor_api.\
+                   block_device_mapping_get_all_by_instance(
+                       context, instance, legacy=False)
+            for bdm in bdms:
+                self.driver.update_block_device_qos(instance, bdm['qos'],
+                                                    bdm['device_name'])
+
+    def update_block_device_qos(self, context, instance, bdm_id):
+        bdms = self.conductor_api.\
+               block_device_mapping_get_all_by_instance(
+                   context, instance, legacy=False)
+        for bdm in bdms:
+            if bdm['id'] == bdm_id:
+                self.driver.update_block_device_qos(instance, bdm['qos'],
+                                                    bdm['device_name'])
+
+        # NOTE(wenjianhn): ignore it if it was gone.
 
     def _get_compute_info(self, context, host):
         compute_node_ref = self.conductor_api.service_get_by_compute_host(

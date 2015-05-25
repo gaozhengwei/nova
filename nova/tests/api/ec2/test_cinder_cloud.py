@@ -825,6 +825,7 @@ class CinderCloudTestCase(test.TestCase):
     def test_stop_with_attached_volume(self):
         # Make sure attach info is reflected to block device mapping.
 
+        self.skipTest('NOTE(wenjianhn): skip until using Cinder.')
         availability_zone = 'zone1:host1'
         vol1 = self.cloud.create_volume(self.context,
                                           size=1,

@@ -78,6 +78,10 @@ class ExtendedVolumesSampleJsonTests(test_servers.ServersSampleBase):
         self._verify_response('servers-detail-resp', subs, response, 200)
 
     def test_attach_volume(self):
+
+        def fake_block_device_qos_create(context, qos):
+            pass
+
         device_name = '/dev/vdd'
         disk_bus = 'ide'
         device_type = 'cdrom'
@@ -93,6 +97,8 @@ class ExtendedVolumesSampleJsonTests(test_servers.ServersSampleBase):
         self.stubs.Set(block_device_obj.BlockDeviceMapping, 'get_by_volume_id',
                        classmethod(lambda *a, **k: None))
 
+        self.stubs.Set(db, 'block_device_qos_create',
+                       fake_block_device_qos_create)
         volume = fakes.stub_volume_get(None, context.get_admin_context(),
                                        'a26887c6-c47b-4654-abb5-dfadf7d3f803')
         subs = {

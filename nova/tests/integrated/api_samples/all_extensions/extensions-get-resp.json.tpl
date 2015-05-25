@@ -473,6 +473,14 @@
             "updated": "%(timestamp)s"
         },
         {
+            "alias": "os-qos-block-devices",
+            "description": "%(text)s",
+            "links": [],
+            "name": "QoSBlockDevices",
+            "namespace": "http://docs.openstack.org/compute/ext/qos-block-devices/api/v2",
+            "updated": "%(timestamp)s"
+        },
+        {
             "alias": "os-quota-class-sets",
             "description": "%(text)s",
             "links": [],

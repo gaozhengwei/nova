@@ -309,6 +309,13 @@ class ConductorManager(manager.Manager):
             context, instance['uuid'])
         if legacy:
             bdms = block_device.legacy_mapping(bdms)
+        for bdm in bdms:
+            try:
+                qos = self.db.block_device_qos_get_by_block_device_mapping_id(
+                    context, bdm['id'])
+            except exception.BlockDeviceQoSNotFoundForBDM:
+                qos = None
+            bdm['qos'] = qos
         return jsonutils.to_primitive(bdms)
 
     # NOTE(russellb) This method can be removed in 2.0 of this API.  It is
@@ -318,6 +325,10 @@ class ConductorManager(manager.Manager):
                                      device_name=None):
         if bdms is not None:
             for bdm in bdms:
+                if bdm.get('qos'):
+                    self.db.\
+                        block_device_qos_delete_by_block_device_mapping_id(
+                            context, bdm['id'])
                 self.db.block_device_mapping_destroy(context, bdm['id'])
                 # NOTE(comstud): bdm['id'] will be different in API cell,
                 # so we must try to destroy by device_name or volume_id.

@@ -343,6 +343,8 @@ MIN_QEMU_LIVESNAPSHOT_VERSION = (1, 3, 0)
 MIN_LIBVIRT_BLOCKIO_VERSION = (0, 10, 2)
 # BlockJobInfo management requirement
 MIN_LIBVIRT_BLOCKJOBINFO_VERSION = (1, 1, 1)
+# Block I/O throttling requirement
+MIN_QEMU_BLOCKIO_THROTTLING_VERSION = (1, 1, 0)
 
 
 def libvirt_error_handler(context, err):
@@ -2272,6 +2274,98 @@ class LibvirtDriver(driver.ComputeDriver):
                           run_as_root=True,
                           check_exit_code=[0, 1])
 
+    def _get_raw_device_number_of_path(self, path):
+        """Get the raw device number of the device that stores the path.
+
+        :returns: a tuple that represents the device
+             e.g. (8, 0)
+             8 is the major number of the device
+             0 is the minor number of the device
+        """
+        # TODO(wenjianhn): test this function with pyfakefs
+
+        def _get_mount_point(path):
+            while not os.path.ismount(path):
+                path = os.path.dirname(path)
+            return path
+
+        def _get_device(mountpoint):
+            with open('/proc/mounts') as mounts:
+                for line in mounts:
+                    if line.startswith('/dev'):
+                        # format of column:
+                        #   /dev/mapper/vg_livecd-lv_root / ext4 ...
+                        columns = line.split()
+                        if columns[1] == mountpoint:
+                            return os.path.realpath(columns[0])
+
+        path = os.path.abspath(path)
+        device = _get_device(_get_mount_point(path))
+        rdev = os.stat(device).st_rdev
+        return (os.major(rdev), os.minor(rdev))
+
+    def _set_instance_blkio_throttle(self, instance, device_name,
+                                     bps_total=None, iops_total=None,
+                                     bps_rd=None, bps_wr=None,
+                                     iops_rd=None, iops_wr=None):
+        params = {'total_bytes_sec': bps_total, 'total_iops_sec': iops_total,
+                  'write_bytes_sec': bps_wr, 'read_iops_sec': iops_rd,
+                  'read_bytes_sec': bps_rd, 'write_iops_sec': iops_wr}
+
+        LOG.debug(_("Block device QoS changed to %(device)s: %(qos)s") %
+                  dict(device=device_name, qos=params))
+
+        shortened_device_name = os.path.basename(device_name)
+        virt_dom = self._lookup_by_name(instance['name'])
+        virt_dom.setBlockIoTune(shortened_device_name, params,
+                                libvirt.VIR_DOMAIN_AFFECT_CONFIG)
+
+        state = LIBVIRT_POWER_STATE[virt_dom.info()[0]]
+        if state == power_state.RUNNING:
+            virt_dom.setBlockIoTune(shortened_device_name, params,
+                                    libvirt.VIR_DOMAIN_AFFECT_LIVE)
+
+    def _set_instance_cgroup_blkio_throttle(self, device_path, instance,
+                                            bps_rd=None, bps_wr=None,
+                                            iops_rd=None, iops_wr=None):
+        device = self._get_raw_device_number_of_path(device_path)
+        blkio_dir = "/cgroup/blkio/libvirt/qemu/%s" % instance['name']
+        # NOTE(wenjianhn): read/write_total_bps/iops is not supported by cgroup
+        qos = {'blkio.throttle.read_bps_device': bps_rd,
+               'blkio.throttle.write_bps_device': bps_wr,
+               'blkio.throttle.read_iops_device': iops_rd,
+               'blkio.throttle.write_iops_device': iops_wr, }
+        for opt in qos:
+            value = qos[opt]
+            if value >= 0:
+                policy = "%(major)s:%(minor)s %(value)s" % dict(
+                    major=device[0],
+                    minor=device[1],
+                    value=value)
+                try:
+                    utils.execute('tee',
+                                  os.path.join(blkio_dir, opt),
+                                  process_input=policy,
+                                  run_as_root=True)
+                except processutils.ProcessExecutionError as e:
+                    LOG.error(_('Setting blkio.throttle failed '
+                                'with error: %s'),
+                              e, instance=instance)
+
+    def update_block_device_qos(self, instance, qos, device_name=None):
+        if qos:
+            if self._is_qemu_support_blockio_throttling():
+                self._set_instance_blkio_throttle(instance, device_name,
+                    bps_total=qos['total_bps'], iops_total=qos['total_iops'],
+                    bps_rd=qos['read_bps'], bps_wr=qos['write_bps'],
+                    iops_rd=qos['read_iops'], iops_wr=qos['write_iops'])
+            else:
+                self._set_instance_cgroup_blkio_throttle(
+                    libvirt_utils.get_instance_path(instance),
+                    instance,
+                    bps_rd=qos['read_bps'], bps_wr=qos['write_bps'],
+                    iops_rd=qos['read_iops'], iops_wr=qos['write_iops'])
+
     # NOTE(ilyaalekseyev): Implementation like in multinics
     # for xenapi(tr3buchet)
     def spawn(self, context, instance, image_meta, injected_files,
@@ -2306,6 +2400,13 @@ class LibvirtDriver(driver.ComputeDriver):
 
         timer = loopingcall.FixedIntervalLoopingCall(_wait_for_boot)
         timer.start(interval=0.5).wait()
+
+        if block_device_info is None or \
+           self._is_qemu_support_blockio_throttling():
+            return
+
+        self.update_block_device_qos(instance,
+                                     block_device_info.get('qos'))
 
     def _flush_libvirt_console(self, pty):
         out, err = utils.execute('dd',
@@ -2976,18 +3077,50 @@ class LibvirtDriver(driver.ComputeDriver):
 
         return cpu
 
+    def is_qemu_support_blockio_throttling(self):
+        # NOTE(wenjianhn): wrap it to make it easier to revert the this patch.
+        return self._is_qemu_support_blockio_throttling()
+
+    def _is_qemu_support_blockio_throttling(self):
+        # NOTE(wenjianhn): Block I/O throttling requires QEMU 1.1.
+        if self.has_min_version(hv_ver=MIN_QEMU_BLOCKIO_THROTTLING_VERSION):
+            return True
+
+        # NOTE(wenjianhn): python-rpm is not hosted in pypi. Import it here
+        # and mock _is_qemu_support_blockio_throttling to avoid ImportError
+        # during unittests.
+        import rpm
+
+        # NOTE(wenjianhn): letv qemu-kvm, which is rhev based, supports block
+        # I/O throttling since qemu-kvm-0.12.1.2-2.415.el6.88.x86_64.
+        # TODO(wenjianhn): Remove when we don't need to this
+        ts = rpm.TransactionSet()
+        release = ts.dbMatch('name', 'qemu-kvm').next()['release']
+        return int(release.rsplit('.')[-1]) >= 88
+
     def get_guest_disk_config(self, instance, name, disk_mapping, inst_type,
-                              image_type=None):
+                              qos, image_type=None):
+
         image = self.image_backend.image(instance,
                                          name,
                                          image_type)
         disk_info = disk_mapping[name]
+        hypervisor_version = self.get_hypervisor_version()
+        extra_specs = {}
+        if qos is not None and self._is_qemu_support_blockio_throttling():
+            extra_specs['quota:disk_read_bytes_sec'] = qos['read_bps']
+            extra_specs['quota:disk_read_iops_sec'] = qos['read_iops']
+            extra_specs['quota:disk_write_bytes_sec'] = qos['write_bps']
+            extra_specs['quota:disk_write_iops_sec'] = qos['write_iops']
+            extra_specs['quota:disk_total_bytes_sec'] = qos['total_bps']
+            extra_specs['quota:disk_total_iops_sec'] = qos['total_iops']
+
         return image.libvirt_info(disk_info['bus'],
                                   disk_info['dev'],
                                   disk_info['type'],
                                   self.disk_cachemode,
-                                  inst_type['extra_specs'],
-                                  self.get_hypervisor_version())
+                                  extra_specs,
+                                  hypervisor_version)
 
     def get_guest_storage_config(self, instance, image_meta,
                                  disk_info,
@@ -2998,6 +3131,8 @@ class LibvirtDriver(driver.ComputeDriver):
 
         block_device_mapping = driver.block_device_info_get_mapping(
             block_device_info)
+
+        qos = driver.block_device_info_get_qos(block_device_info)
 
         if CONF.libvirt.virt_type == "lxc":
             fs = vconfig.LibvirtConfigGuestFilesys()
@@ -3011,27 +3146,31 @@ class LibvirtDriver(driver.ComputeDriver):
                 diskrescue = self.get_guest_disk_config(instance,
                                                         'disk.rescue',
                                                         disk_mapping,
-                                                        inst_type)
+                                                        inst_type,
+                                                        qos)
                 devices.append(diskrescue)
 
                 diskos = self.get_guest_disk_config(instance,
                                                     'disk',
                                                     disk_mapping,
-                                                    inst_type)
+                                                    inst_type,
+                                                    qos)
                 devices.append(diskos)
             else:
                 if 'disk' in disk_mapping:
                     diskos = self.get_guest_disk_config(instance,
                                                         'disk',
                                                         disk_mapping,
-                                                        inst_type)
+                                                        inst_type,
+                                                        qos)
                     devices.append(diskos)
 
                 if 'disk.local' in disk_mapping:
                     disklocal = self.get_guest_disk_config(instance,
                                                            'disk.local',
                                                            disk_mapping,
-                                                           inst_type)
+                                                           inst_type,
+                                                           qos)
                     devices.append(disklocal)
                     self.virtapi.instance_update(
                         nova_context.get_admin_context(), instance['uuid'],
@@ -3044,14 +3183,14 @@ class LibvirtDriver(driver.ComputeDriver):
                     diskeph = self.get_guest_disk_config(
                         instance,
                         blockinfo.get_eph_disk(idx),
-                        disk_mapping, inst_type)
+                        disk_mapping, inst_type, qos)
                     devices.append(diskeph)
 
                 if 'disk.swap' in disk_mapping:
                     diskswap = self.get_guest_disk_config(instance,
                                                           'disk.swap',
                                                           disk_mapping,
-                                                          inst_type)
+                                                          inst_type, qos)
                     devices.append(diskswap)
                     self.virtapi.instance_update(
                         nova_context.get_admin_context(), instance['uuid'],
@@ -3074,6 +3213,7 @@ class LibvirtDriver(driver.ComputeDriver):
                                                         'disk.config',
                                                         disk_mapping,
                                                         inst_type,
+                                                        qos,
                                                         'raw')
                 devices.append(diskconfig)
 

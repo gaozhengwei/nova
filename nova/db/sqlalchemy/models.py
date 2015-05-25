@@ -585,6 +585,38 @@ class BlockDeviceMapping(BASE, NovaBase):
     connection_info = Column(MediumText())
 
 
+class BlockDeviceQoS(BASE, NovaBase):
+    """Represents the QoS configuration of a block device."""
+    __tablename__ = 'block_device_qoses'
+    __table_args__ = (
+        schema.UniqueConstraint(
+            "block_device_mapping_id",
+            name="uniq_block_device_qoses0block_device_mapping_id"),
+        Index('ix_block_device_qoses_block_device_mapping_id',
+              'block_device_mapping_id'), )
+
+    id = Column(Integer, primary_key=True, nullable=False)
+
+    total_bps = Column('total_bps', Integer, default=0)
+    total_iops = Column('total_iops', Integer, default=0)
+    read_bps = Column('read_bps', Integer, default=0)
+    write_bps = Column('write_bps', Integer, default=0)
+    read_iops = Column('read_iops', Integer, default=0)
+    write_iops = Column('write_iops', Integer, default=0)
+
+    block_device_mapping_id = Column(Integer,
+                                     ForeignKey('block_device_mapping.id'),
+                                     nullable=False)
+    primaryjoin = ('and_('
+        'BlockDeviceQoS.block_device_mapping_id == BlockDeviceMapping.id,'
+        'BlockDeviceMapping.deleted == 0)')
+    block_device_mapping = relationship(BlockDeviceMapping,
+                                        backref=backref('block_device_qos',
+                                                        uselist=False),
+                                        foreign_keys=block_device_mapping_id,
+                                        primaryjoin=primaryjoin)
+
+
 class IscsiTarget(BASE, NovaBase):
     """Represents an iscsi target for a given host."""
     __tablename__ = 'iscsi_targets'

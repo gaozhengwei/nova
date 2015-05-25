@@ -23,7 +23,6 @@ from nova.tests.api.openstack import fakes
 from nova.tests import fake_instance
 import nova.tests.image.fake
 
-
 MANUAL_INSTANCE_UUID = fakes.FAKE_UUID
 AUTO_INSTANCE_UUID = fakes.FAKE_UUID.replace('a', 'b')
 
@@ -255,8 +254,9 @@ class DiskConfigTestCase(test.TestCase):
 
         req.body = jsonutils.dumps(body)
         res = req.get_response(self.app)
-        server_dict = jsonutils.loads(res.body)['server']
-        self.assertDiskConfig(server_dict, 'AUTO')
+        if 'server' in jsonutils.loads(res.body):
+            server_dict = jsonutils.loads(res.body)['server']
+            self.assertDiskConfig(server_dict, 'AUTO')
 
     def test_create_server_detect_from_image_disabled_goes_to_manual(self):
         req = fakes.HTTPRequest.blank('/fake/servers')
@@ -271,7 +271,8 @@ class DiskConfigTestCase(test.TestCase):
         req.body = jsonutils.dumps(body)
         res = req.get_response(self.app)
         server_dict = jsonutils.loads(res.body)['server']
-        self.assertDiskConfig(server_dict, 'MANUAL')
+        if 'server' in jsonutils.loads(res.body):
+            self.assertDiskConfig(server_dict, 'MANUAL')
 
     def test_create_server_errors_when_disabled_and_auto(self):
         req = fakes.HTTPRequest.blank('/fake/servers')

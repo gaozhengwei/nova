@@ -204,7 +204,8 @@ class MetadataTestCase(test.TestCase):
 
         def fake_bdm_get(ctxt, uuid, use_slave=False):
             return [fake_block_device.FakeDbBlockDeviceDict(
-                    {'volume_id': 87654321,
+                    {'id': 22,
+                     'volume_id': 87654321,
                      'snapshot_id': None,
                      'no_device': None,
                      'source_type': 'volume',
@@ -212,7 +213,8 @@ class MetadataTestCase(test.TestCase):
                      'delete_on_termination': True,
                      'device_name': '/dev/sdh'}),
                     fake_block_device.FakeDbBlockDeviceDict(
-                    {'volume_id': None,
+                    {'id': 23,
+                     'volume_id': None,
                      'snapshot_id': None,
                      'no_device': None,
                      'source_type': 'blank',
@@ -221,7 +223,8 @@ class MetadataTestCase(test.TestCase):
                      'delete_on_termination': None,
                      'device_name': '/dev/sdc'}),
                     fake_block_device.FakeDbBlockDeviceDict(
-                    {'volume_id': None,
+                    {'id': 24,
+                     'volume_id': None,
                      'snapshot_id': None,
                      'no_device': None,
                      'source_type': 'blank',
@@ -230,8 +233,13 @@ class MetadataTestCase(test.TestCase):
                      'delete_on_termination': None,
                      'device_name': '/dev/sdb'})]
 
+        def fake_qos_get(ctxt, bdm_id):
+            return {}
+
         self.stubs.Set(db, 'block_device_mapping_get_all_by_instance',
                        fake_bdm_get)
+        self.stubs.Set(db, 'block_device_qos_get_by_block_device_mapping_id',
+                       fake_qos_get)
 
         expected = {'ami': 'sda1',
                     'root': '/dev/sda1',

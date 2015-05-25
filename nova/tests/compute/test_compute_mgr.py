@@ -1173,6 +1173,28 @@ class ComputeManagerUnitTestCase(test.NoDBTestCase):
             destroy.assert_called_once_with(self.context, instance_2, None,
                                             {}, True)
 
+    def test_heal_instance_block_device_qos(self):
+        instance = {'id': 123, }
+        bdm = {'id': 321, 'qos': {}, 'device_name': '/dev/vda'}
+        with contextlib.nested(
+                mock.patch.object(self.compute.driver,
+                                  'is_qemu_support_blockio_throttling'),
+                mock.patch.object(self.compute.conductor_api,
+                                  'instance_get_all_by_filters'),
+                mock.patch.object(self.compute.conductor_api,
+                                  'block_device_mapping_get_all_by_instance'),
+                mock.patch.object(self.compute.driver,
+                                  'update_block_device_qos')
+        ) as (is_qemu_support_blockio_throttling,
+              instance_get_all_by_filters, bdm_get_all_by_instance,
+              update_blk_dev_qos):
+            is_qemu_support_blockio_throttling.return_value = False
+            instance_get_all_by_filters.return_value = [instance]
+            bdm_get_all_by_instance.return_value = [bdm]
+            self.compute._heal_instance_block_device_qos(self.context)
+            update_blk_dev_qos.assert_called_once_with(
+                instance, bdm['qos'], bdm['device_name'])
+
 
 class ComputeManagerBuildInstanceTestCase(test.NoDBTestCase):
     def setUp(self):
@@ -1914,3 +1936,51 @@ class ComputeManagerMigrationTestCase(test.NoDBTestCase):
             )
             self.assertEqual("error", self.migration.status)
             migration_save.assert_has_calls([mock.call(elevated_context)])
+
+    def test_heal_instance_block_device_qos(self):
+        instance = {'id': 123, }
+        bdm = {'id': 321, 'qos': {}, 'device_name': '/dev/vda'}
+        with contextlib.nested(
+                mock.patch.object(self.compute.conductor_api,
+                                  'instance_get_all_by_filters'),
+                mock.patch.object(self.compute.conductor_api,
+                                  'block_device_mapping_get_all_by_instance'),
+                mock.patch.object(self.compute.driver,
+                                  'update_block_device_qos')
+        ) as (instance_get_all_by_filters, bdm_get_all_by_instance,
+              update_blk_dev_qos):
+            instance_get_all_by_filters.return_value = [instance]
+            bdm_get_all_by_instance.return_value = [bdm]
+            self.compute._heal_instance_block_device_qos(self.context)
+            update_blk_dev_qos.assert_called_once_with(
+                instance, bdm['qos'], bdm['device_name'])
+
+    def test_update_block_device_qos(self):
+        instance = {'id': 123, }
+        bdm = {'id': 321,
+               'qos': {'write_bps': 600000, },
+               'device_name': '/dev/vda', }
+        with contextlib.nested(
+                mock.patch.object(self.compute.conductor_api,
+                                  'block_device_mapping_get_all_by_instance'),
+                mock.patch.object(self.compute.driver,
+                                  'update_block_device_qos')
+        ) as (bdm_get_all_by_instance, update_blk_dev_qos):
+            bdm_get_all_by_instance.return_value = [bdm, {'id': 200, }, ]
+            self.compute.update_block_device_qos(self.context, instance, 321)
+            update_blk_dev_qos.assert_called_once_with(instance,
+                                             bdm['qos'], bdm['device_name'])
+
+    def test_update_block_device_qos_blk_not_found(self):
+        instance = {'id': 123, }
+        bdm = {'id': 321,
+               'qos': {'write_bps': 600000, }, }
+        with contextlib.nested(
+                mock.patch.object(self.compute.conductor_api,
+                                  'block_device_mapping_get_all_by_instance'),
+                mock.patch.object(self.compute.driver,
+                                  'update_block_device_qos')
+        ) as (bdm_get_all_by_instance, update_blk_dev_qos):
+            bdm_get_all_by_instance.return_value = [bdm, {'id': 200, }, ]
+            self.compute.update_block_device_qos(self.context, instance, 400)
+            self.assertEqual(update_blk_dev_qos.call_count, 0)

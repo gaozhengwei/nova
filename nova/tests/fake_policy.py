@@ -102,6 +102,10 @@ policy_data = """
     "compute:v3:servers:start": "",
     "compute:v3:servers:stop": "",
     "compute_extension:v3:os-access-ips": "",
+
+    "compute:update_interface_qos": "is_admin:True",
+    "compute:update_block_device_qos": "is_admin:True",
+
     "compute_extension:accounts": "",
     "compute_extension:admin_actions:pause": "",
     "compute_extension:admin_actions:unpause": "",
@@ -275,6 +279,8 @@ policy_data = """
     "compute_extension:v3:os-suspend-server:resume": "",
     "compute_extension:users": "",
     "compute_extension:virtual_interfaces": "",
+    "compute_extension:qos_block_devices:index": "",
+    "compute_extension:qos_block_devices:update": "rule:admin_api",
     "compute_extension:virtual_storage_arrays": "",
     "compute_extension:volumes": "",
     "compute_extension:volume_attachments:index": "",

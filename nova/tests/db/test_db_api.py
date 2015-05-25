@@ -7224,20 +7224,98 @@ class PciDeviceDBApiTestCase(test.TestCase, ModelsObjectComparatorMixin):
                           v2['address'])
 
 
-class RetryOnDeadlockTestCase(test.TestCase):
-    def test_without_deadlock(self):
-        @sqlalchemy_api._retry_on_deadlock
-        def call_api(*args, **kwargs):
-            return True
-        self.assertTrue(call_api())
+class BlockDeviceQoSDBApiTestCase(test.TestCase, ModelsObjectComparatorMixin):
+    def setUp(self):
+        super(BlockDeviceQoSDBApiTestCase, self).setUp()
+        self.user_ctxt = context.RequestContext('user', 'project')
+        self.admin_ctxt = context.get_admin_context()
+        self.ignored_keys = ('deleted', 'updated_at', 'deleted_at',
+                             'id', 'created_at', )
 
-    def test_raise_deadlock(self):
-        self.attempts = 2
+    def _get_base_values(self):
+        return {'total_bps': 0,
+                'total_iops': 0,
+                'read_bps': 300,
+                'write_bps': 400,
+                'read_iops': 500,
+                'write_iops': 400,
+                'block_device_mapping_id': 10, }
 
-        @sqlalchemy_api._retry_on_deadlock
-        def call_api(*args, **kwargs):
-            while self.attempts:
-                self.attempts = self.attempts - 1
-                raise db_exc.DBDeadlock("fake exception")
-            return True
-        self.assertTrue(call_api())
+    def _create_block_device_qos(self, values):
+        v = self._get_base_values()
+        v.update(values)
+        return db.block_device_qos_create(self.admin_ctxt, v)
+
+    def test_block_device_qos_create_works(self):
+        qos = self._create_block_device_qos({})
+        self.assertIsNotNone(qos['id'])
+        self._assertEqualObjects(qos, self._get_base_values(),
+                                 ignored_keys=self.ignored_keys)
+
+    def test_block_device_qos_create_with_duplicate_bdm_id(self):
+        self._create_block_device_qos({'block_device_mapping_id': 1024, })
+        self.assertRaises(exception.BlockDeviceQoSExists,
+                          self._create_block_device_qos,
+                          {'block_device_mapping_id': 1024, })
+
+    def test_block_device_qos_get_by_id_works(self):
+        qos = self._create_block_device_qos(
+            {'block_device_mapping_id': 2048, })
+        self._assertEqualObjects(qos,
+                                 db.block_device_qos_get_by_id(
+                                     self.user_ctxt, qos['id']),
+                                 ignored_keys=self.ignored_keys)
+
+    def test_block_device_qos_get_by_id_raise_not_found(self):
+        self.assertRaises(exception.BlockDeviceQoSNotFound,
+                          db.block_device_qos_get_by_id, self.user_ctxt, 404)
+
+    def test_block_device_qos_get_by_bdm_id_works(self):
+        bdm_id = 4096
+        qos = self._create_block_device_qos(
+            {'block_device_mapping_id': bdm_id, })
+        self._assertEqualObjects(qos,
+                            db.block_device_qos_get_by_block_device_mapping_id(
+                                self.user_ctxt, bdm_id),
+                            ignored_keys=self.ignored_keys)
+
+    def test_block_device_qos_get_by_bdm_id_raise_not_found(self):
+        self.assertRaises(exception.BlockDeviceQoSNotFoundForBDM,
+                          db.block_device_qos_get_by_block_device_mapping_id,
+                          self.user_ctxt, 404)
+
+    def test_block_device_qos_update_by_id_works(self):
+        qos = self._create_block_device_qos(
+            {'block_device_mapping_id': 4096, })
+        new_qos = self._get_base_values()
+        for k in new_qos:
+            new_qos[k] = 1000
+        self._assertEqualObjects(new_qos,
+                                 db.block_device_qos_update_by_id(
+                                     self.admin_ctxt, qos['id'], new_qos),
+                                 ignored_keys=self.ignored_keys)
+
+    def test_block_device_qos_update_by_id_raise_not_found(self):
+        self.assertRaises(exception.BlockDeviceQoSNotFound,
+                          db.block_device_qos_update_by_id,
+                          self.admin_ctxt, 404, self._get_base_values())
+
+    def test_block_device_qos_update_by_id_low_privi_context(self):
+        self.assertRaises(exception.AdminRequired,
+                          db.block_device_qos_update_by_id,
+                          self.user_ctxt, 404, self._get_base_values())
+
+    def test_block_device_qos_delete_by_bdm_id_works(self):
+        result = self._create_block_device_qos({})
+        db.block_device_qos_delete_by_block_device_mapping_id(
+            self.user_ctxt,
+            result['block_device_mapping_id'])
+        qos = db.block_device_qos_get_by_id(
+            self.admin_ctxt.elevated(read_deleted='yes'),
+            result['id'])
+        self.assertEqual(qos['deleted'], result['id'])
+
+    def test_block_device_qos_delete_by_bdm_id_nonexists(self):
+        # It won't raise.
+        db.block_device_qos_delete_by_block_device_mapping_id(
+            self.user_ctxt, 404)

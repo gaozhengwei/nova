@@ -497,6 +497,14 @@
             "updated": "2013-12-17T00:00:00+00:00"
         },
         {
+            "alias": "os-qos-block-devices",
+            "description": "Interface network QoS management extension.",
+            "links": [],
+            "name": "QoSBlockDevices",
+            "namespace": "http://docs.openstack.org/compute/ext/qos-block-devices/api/v2",
+            "updated": "2014-06-13T00:00:00+00:00"
+        },
+        {
             "alias": "os-quota-class-sets",
             "description": "Quota classes management support.",
             "links": [],

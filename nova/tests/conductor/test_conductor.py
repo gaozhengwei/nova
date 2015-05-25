@@ -236,12 +236,17 @@ class _BaseTestCase(object):
         fake_inst = {'uuid': 'fake-uuid'}
         self.mox.StubOutWithMock(db,
                                  'block_device_mapping_get_all_by_instance')
+        self.mox.StubOutWithMock(db,
+                    'block_device_qos_get_by_block_device_mapping_id')
         db.block_device_mapping_get_all_by_instance(
-            self.context, fake_inst['uuid']).AndReturn('fake-result')
+            self.context, fake_inst['uuid']).AndReturn([{'id': 128, }])
+        db.block_device_qos_get_by_block_device_mapping_id(
+            self.context, 128).AndReturn({'iops_read': 300, })
         self.mox.ReplayAll()
         result = self.conductor.block_device_mapping_get_all_by_instance(
             self.context, fake_inst, legacy=False)
-        self.assertEqual(result, 'fake-result')
+        self.assertEqual(result, [{'id': 128,
+                                   'qos': {'iops_read': 300, }, }, ])
 
     def test_instance_get_active_by_window_joined(self):
         self.mox.StubOutWithMock(db, 'instance_get_active_by_window_joined')
@@ -610,6 +615,79 @@ class ConductorTestCase(_BaseTestCase, test.TestCase):
                                                              create=False)
         self.conductor.block_device_mapping_update_or_create(self.context,
                                                              fake_bdm)
+
+    def test_block_device_mapping_destroy(self):
+        fake_bdm = {'id': 'fake-bdm',
+                    'instance_uuid': 'fake-uuid',
+                    'device_name': 'fake-device1',
+                    'volume_id': 'fake-vol-id1'}
+        fake_bdm2 = {'id': 'fake-bdm-2',
+                     'instance_uuid': 'fake-uuid2',
+                     'device_name': '',
+                     'volume_id': 'fake-vol-id2'}
+        fake_inst = {'uuid': 'fake-uuid'}
+
+        cells_rpcapi = self.conductor.cells_rpcapi
+
+        self.mox.StubOutWithMock(db, 'block_device_mapping_destroy')
+        self.mox.StubOutWithMock(
+            db, 'block_device_mapping_destroy_by_instance_and_device')
+        self.mox.StubOutWithMock(
+            db, 'block_device_mapping_destroy_by_instance_and_volume')
+        self.mox.StubOutWithMock(cells_rpcapi, 'bdm_destroy_at_top')
+
+        db.block_device_mapping_destroy(self.context, 'fake-bdm')
+        cells_rpcapi.bdm_destroy_at_top(self.context,
+                                        fake_bdm['instance_uuid'],
+                                        device_name=fake_bdm['device_name'])
+        db.block_device_mapping_destroy(self.context, 'fake-bdm-2')
+        cells_rpcapi.bdm_destroy_at_top(self.context,
+                                        fake_bdm2['instance_uuid'],
+                                        volume_id=fake_bdm2['volume_id'])
+        db.block_device_mapping_destroy_by_instance_and_device(self.context,
+                                                               'fake-uuid',
+                                                               'fake-device')
+        cells_rpcapi.bdm_destroy_at_top(self.context, fake_inst['uuid'],
+                                        device_name='fake-device')
+        db.block_device_mapping_destroy_by_instance_and_volume(self.context,
+                                                               'fake-uuid',
+                                                               'fake-volume')
+        cells_rpcapi.bdm_destroy_at_top(self.context, fake_inst['uuid'],
+                                        volume_id='fake-volume')
+
+        self.mox.ReplayAll()
+        self.conductor.block_device_mapping_destroy(self.context,
+                                                    [fake_bdm,
+                                                     fake_bdm2])
+        self.conductor.block_device_mapping_destroy(self.context,
+                                                    instance=fake_inst,
+                                                    device_name='fake-device')
+        self.conductor.block_device_mapping_destroy(self.context,
+                                                    instance=fake_inst,
+                                                    volume_id='fake-volume')
+
+    def test_block_device_mapping_destroy_delete_qos(self):
+        fake_bdm = {'id': 'fake-bdm',
+                    'instance_uuid': 'fake-uuid',
+                    'device_name': '/dev/vda',
+                    'qos': {'write_iops': 300}, }
+        fake_bdm2 = {'id': 'fake-bdm-2',
+                     'instance_uuid': 'fake-uuid2',
+                     'device_name': '/dev/vdb', }
+
+        with contextlib.nested(
+                mock.patch.object(db, 'block_device_mapping_destroy'),
+                mock.patch.object(db,
+                    'block_device_qos_delete_by_block_device_mapping_id')
+        ) as (bdm_destroy, blk_qos_delete_by_bdm_id):
+            self.conductor.block_device_mapping_destroy(self.context,
+                                                        [fake_bdm,
+                                                         fake_bdm2])
+            bdm_destroy.assert_has_calls(
+                [mock.call(self.context, fake_bdm['id']),
+                 mock.call(self.context, fake_bdm2['id']), ])
+            blk_qos_delete_by_bdm_id.assert_called_once_with(
+                self.context, fake_bdm['id'])
 
     def test_instance_get_all_by_filters(self):
         filters = {'foo': 'bar'}
