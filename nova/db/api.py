@@ -1779,6 +1779,21 @@ def aggregate_host_delete(context, aggregate_id, host):
     IMPL.aggregate_host_delete(context, aggregate_id, host)
 
 
+def availability_zone_associate_network_get(context, az_name):
+    """Get the associate network by availability zone name."""
+    return IMPL.availability_zone_associate_network_get(context, az_name)
+
+
+def availability_zone_associate_network_update(context, az_name, network):
+    """Update the network associated with availability zone."""
+    IMPL.availability_zone_associate_network_update(context, az_name, network)
+
+
+def availability_zones_get_by_network(context, networks):
+    """Get the availability zones by networks."""
+    return IMPL.availability_zones_get_by_network(context, networks)
+
+
 ####################
 
 

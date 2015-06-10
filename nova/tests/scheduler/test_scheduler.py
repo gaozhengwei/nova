@@ -471,6 +471,9 @@ class SchedulerTestCase(test.NoDBTestCase):
             else:
                 raise exception.ImageNotFound(image_id=id)
 
+        def fake_aggregate_metadata(context, host, key):
+            return []
+
         fake_image.stub_out_image_service(self.stubs)
         self.stubs.Set(fake_image._FakeImageService, 'show', fake_show)
         self.image_service = glance.get_default_image_service()
@@ -479,6 +482,8 @@ class SchedulerTestCase(test.NoDBTestCase):
         self.context = context.RequestContext('fake_user', 'fake_project')
         self.topic = 'fake_topic'
         self.servicegroup_api = servicegroup.API()
+        self.stubs.Set(db, 'aggregate_metadata_get_by_host',
+            fake_aggregate_metadata)
 
     def test_hosts_up(self):
         service1 = {'host': 'host1'}

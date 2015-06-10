@@ -40,6 +40,7 @@ from nova.compute import utils as compute_utils
 from nova.compute import vm_states
 from nova.consoleauth import rpcapi as consoleauth_rpcapi
 from nova import crypto
+from nova import db
 from nova.db import base
 from nova import exception
 from nova import hooks
@@ -461,6 +462,49 @@ class API(base.Base):
         """
         return self.network_api.validate_networks(context, requested_networks,
                                                   max_count)
+
+    def _get_availability_zone_associate_network(self, context, az_name):
+        try:
+            associate_network = db.availability_zone_associate_network_get(
+                context, az_name)
+        except exception.AvailabilityZoneNotFound:
+            associate_network = []
+
+        return associate_network
+
+    def _availability_zones_get_by_network(self, context, networks):
+        return db.availability_zones_get_by_network(context, networks)
+
+    def _check_availability_zone_associate_network(self, context,
+                                                   availability_zone,
+                                                   requested_networks):
+        if not availability_zone and not requested_networks:
+            return None, requested_networks
+
+        if not availability_zone and requested_networks:
+            networks = [net[0] for net in requested_networks]
+            filter_azs = self._availability_zones_get_by_network(
+                context, networks)
+            return filter_azs, requested_networks
+
+        if availability_zone and not requested_networks:
+            associate_network = self._get_availability_zone_associate_network(
+                context, availability_zone)
+            if associate_network:
+                requested_networks = []
+                for net in associate_network:
+                    requested_networks.append((net, None))
+        else:
+            associate_network = self._get_availability_zone_associate_network(
+                context, availability_zone)
+            if associate_network:
+                for net in requested_networks:
+                    if net[0] not in associate_network:
+                        reason = _("Input network %s is not associated with "
+                                   "the availability zone.") % net[0]
+                        raise exception.InvalidInput(reason=reason)
+
+        return None, requested_networks
 
     @staticmethod
     def _handle_kernel_and_ramdisk(context, kernel_id, ramdisk_id, image):
@@ -979,6 +1023,10 @@ class API(base.Base):
                         'max_net_count': max_net_count})
             max_count = max_net_count
 
+        filter_availability_zones, requested_networks = \
+            self._check_availability_zone_associate_network(context,
+                availability_zone, requested_networks)
+
         block_device_mapping = self._check_and_transform_bdm(
             base_options, boot_meta, min_count, max_count,
             block_device_mapping, legacy_bdm)
@@ -989,6 +1037,10 @@ class API(base.Base):
 
         filter_properties = self._build_filter_properties(context,
                 scheduler_hints, forced_host, forced_node, instance_type)
+
+        if filter_availability_zones:
+            filter_properties['filter_availability_zones'] = \
+                filter_availability_zones
 
         self._update_instance_group(context, instances, scheduler_hints)
 

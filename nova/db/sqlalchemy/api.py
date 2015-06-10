@@ -21,6 +21,7 @@ import collections
 import copy
 import datetime
 import functools
+import json
 import sys
 import time
 import uuid
@@ -5170,6 +5171,49 @@ def _aggregate_metadata_get_query(context, aggregate_id, session=None,
                 filter_by(aggregate_id=aggregate_id)
 
 
+def availability_zone_associate_network_get(context, az_name):
+    # Note: aggregates in the same az should have the same network.
+    query = model_query(context, models.AggregateMetadata)
+    query = query.filter_by(key='availability_zone').\
+                filter_by(value=az_name).first()
+    if not query:
+        raise exception.AvailabilityZoneNotFound(az_name=az_name)
+
+    network = query['network'] if query['network'] is not None else '[]'
+
+    return json.loads(network)
+
+
+def availability_zone_associate_network_update(context, az_name, network):
+    value = {'network': json.dumps(network)}
+
+    query = model_query(context, models.AggregateMetadata)
+    query.filter_by(key='availability_zone').\
+        filter_by(value=az_name).update(value)
+
+
+def availability_zones_get_by_network(context, networks):
+    query = model_query(context, models.AggregateMetadata)
+    rows = query.filter_by(key='availability_zone').all()
+
+    filter_azs = []
+    if not rows:
+        return filter_azs
+
+    for r in rows:
+        flag = True
+        az_name = r['value']
+        az_networks = json.loads(r['network'])
+        for net in networks:
+            if net not in az_networks:
+                flag = False
+
+        if flag and (az_name not in filter_azs):
+            filter_azs.append(az_name)
+
+    return filter_azs
+
+
 @require_aggregate_exists
 def aggregate_metadata_get(context, aggregate_id):
     rows = model_query(context,
@@ -5223,6 +5267,16 @@ def aggregate_metadata_add(context, aggregate_id, metadata, set_delete=False,
                                      "value": value,
                                      "aggregate_id": aggregate_id})
                     session.add(meta_ref)
+
+            if 'availability_zone' in metadata:
+                az = metadata['availability_zone']
+                try:
+                    network = availability_zone_associate_network_get(
+                                context, az)
+                except exception.AvailabilityZoneNotFound:
+                    network = []
+                availability_zone_associate_network_update(context,
+                                az, network)
 
             return metadata
         except db_exc.DBDuplicateEntry:

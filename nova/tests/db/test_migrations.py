@@ -695,6 +695,16 @@ class TestNovaMigrations(BaseWalkMigrationTestCase, CommonTestsMixIn):
         # confirm compute_node_stats exists
         db_utils.get_table(engine, 'compute_node_stats')
 
+    def _check_235(self, engine, data):
+        self.assertColumnExists(engine, 'aggregate_metadata', 'network')
+
+        aggregate_metadata = db_utils.get_table(engine, 'aggregate_metadata')
+        self.assertIsInstance(aggregate_metadata.c.network.type,
+                              sqlalchemy.types.Text)
+
+    def _post_downgrade_235(self, engine):
+        self.assertColumnNotExists(engine, 'aggregate_metadata', 'network')
+
 
 class TestBaremetalMigrations(BaseWalkMigrationTestCase, CommonTestsMixIn):
     """Test sqlalchemy-migrate migrations."""

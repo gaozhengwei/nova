@@ -685,6 +685,75 @@ class AggregateDBApiTestCase(test.TestCase):
                           db.aggregate_host_delete,
                           ctxt, result['id'], _get_fake_aggr_hosts()[0])
 
+    def test_availability_zone_associate_network_get(self):
+        ctxt = context.get_admin_context()
+        fake_network = ['1111']
+        _create_aggregate(context=ctxt, metadata={'availability_zone':
+            'fake_avail_zone'})
+        db.availability_zone_associate_network_update(
+            ctxt, 'fake_avail_zone', fake_network)
+        expected = db.availability_zone_associate_network_get(
+            ctxt, 'fake_avail_zone')
+        self.assertEqual(expected, fake_network)
+
+    def test_availability_zone_associated_network_get_not_existed(self):
+        ctxt = context.get_admin_context()
+        fake_network = ['1111']
+        _create_aggregate(context=ctxt, metadata={'availability_zone':
+            'fake_avail_zone'})
+        db.availability_zone_associate_network_update(
+            ctxt, 'fake_avail_zone', fake_network)
+        self.assertRaises(exception.AvailabilityZoneNotFound,
+                          db.availability_zone_associate_network_get,
+                          ctxt, 'fake_avail_zone_not_existed')
+
+    def test_availability_zone_associate_network_update(self):
+        ctxt = context.get_admin_context()
+        fake_network = ['1111']
+        _create_aggregate(context=ctxt, metadata={'availability_zone':
+            'fake_avail_zone'})
+        db.availability_zone_associate_network_update(
+            ctxt, 'fake_avail_zone', fake_network)
+        expected = db.availability_zone_associate_network_get(
+            ctxt, 'fake_avail_zone')
+        self.assertEqual(expected, fake_network)
+
+        fake_network = ['1111', '2222']
+        db.availability_zone_associate_network_update(
+            ctxt, 'fake_avail_zone', fake_network)
+        expected = db.availability_zone_associate_network_get(
+            ctxt, 'fake_avail_zone')
+        self.assertEqual(expected, fake_network)
+
+    def test_availability_zones_get_by_network(self):
+        ctxt = context.get_admin_context()
+        fake_network = ['1111', '2222']
+        _create_aggregate(context=ctxt, metadata={'availability_zone':
+            'az1'})
+        values = {"name": "fake_aggreate2"}
+        _create_aggregate(context=ctxt, values=values,
+             metadata={'availability_zone': 'az2'})
+        db.availability_zone_associate_network_update(
+            ctxt, 'az1', fake_network)
+        db.availability_zone_associate_network_update(
+            ctxt, 'az2', fake_network)
+        expected = db.availability_zones_get_by_network(
+            ctxt, ['1111'])
+        self.assertIn('az1', expected)
+        self.assertIn('az2', expected)
+
+        db.availability_zone_associate_network_update(
+            ctxt, 'az2', ['3333'])
+        expected = db.availability_zones_get_by_network(
+            ctxt, ['1111'])
+        self.assertIn('az1', expected)
+        self.assertNotIn('az2', expected)
+
+        expected = db.availability_zones_get_by_network(
+            ctxt, ['4444'])
+        self.assertNotIn('az1', [])
+        self.assertNotIn('az2', [])
+
 
 class SqlAlchemyDbApiTestCase(DbTestCase):
     def test_instance_get_all_by_host(self):
