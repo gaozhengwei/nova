@@ -14,6 +14,7 @@ from webob import exc
 
 from nova.api.openstack import extensions
 from nova.api.openstack import wsgi
+from nova import db
 from nova import exception
 from nova import network
 from nova.openstack.common.gettextutils import _
@@ -78,6 +79,72 @@ class NetworkAssociateActionController(wsgi.Controller):
                     'Network API')
             raise exc.HTTPNotImplemented(explanation=msg)
 
+        return exc.HTTPAccepted()
+
+    @wsgi.action("associate_availability_zone")
+    def _associate_availability_zone(self, req, id, body):
+        context = req.environ['nova.context']
+        authorize(context)
+
+        try:
+            self.network_api.get(context, id)
+        except exception.NetworkNotFound:
+            msg = _("Network not found")
+            raise exc.HTTPNotFound(explanation=msg)
+
+        az_name = body.get('associate_availability_zone', None)
+        if not az_name:
+            msg = _("Invalid availability zone provided.")
+            raise exc.HTTPBadRequest(explanation=msg)
+
+        try:
+            network = db.availability_zone_associate_network_get(context,
+                                                                 az_name)
+        except exception.AvailabilityZoneNotFound:
+            msg = _("Availability zone %s not found.") % az_name
+            raise exc.HTTPNotFound(explanation=msg)
+
+        if id in network:
+            msg = _("Network %s has already been associated to the "
+                    "availability zone.") % id
+            raise exc.HTTPBadRequest(explanation=msg)
+
+        network.append(id)
+        db.availability_zone_associate_network_update(context,
+                                                      az_name, network)
+        return exc.HTTPAccepted()
+
+    @wsgi.action("disassociate_availability_zone")
+    def _disassociate_availability_zone(self, req, id, body):
+        context = req.environ['nova.context']
+        authorize(context)
+
+        try:
+            self.network_api.get(context, id)
+        except exception.NetworkNotFound:
+            msg = _("Network not found.")
+            raise exc.HTTPNotFound(explanation=msg)
+
+        az_name = body.get('disassociate_availability_zone', None)
+        if not az_name:
+            msg = _("Invalid availability zone provided.")
+            raise exc.HTTPBadRequest(explanation=msg)
+
+        try:
+            network = db.availability_zone_associate_network_get(context,
+                                                                 az_name)
+        except exception.AvailabilityZoneNotFound:
+            msg = _("Availability zone %s not found.") % az_name
+            raise exc.HTTPNotFound(explanation=msg)
+
+        if id not in network:
+            msg = _("Network %s has not been associated to the "
+                    "availability zone.") % id
+            raise exc.HTTPBadRequest(explanation=msg)
+
+        network.remove(id)
+        db.availability_zone_associate_network_update(context,
+                                                      az_name, network)
         return exc.HTTPAccepted()
 
 

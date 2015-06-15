@@ -25,6 +25,7 @@ import webob
 from nova.api.openstack.compute.contrib import networks_associate
 from nova.api.openstack.compute.contrib import os_networks as networks
 import nova.context
+from nova import db
 from nova import exception
 from nova import test
 from nova.tests.api.openstack import fakes
@@ -387,3 +388,90 @@ class NetworksTest(test.NoDBTestCase):
         self.assertRaises(webob.exc.HTTPNotImplemented,
                           controller._disassociate_host_and_project,
                           req, uuid, {'disassociate': None})
+
+
+class NetworkAssociateAvailabilityZoneTest(test.NoDBTestCase):
+    def setUp(self):
+        super(NetworkAssociateAvailabilityZoneTest, self).setUp()
+        self.associate_controller = networks_associate\
+            .NetworkAssociateActionController()
+
+    def test_network_associate_availability_zone(self):
+        uuid = FAKE_NETWORKS[0]['uuid']
+        req = fakes.HTTPRequest.blank('/v2/1234/os-networks/%s/action' % uuid)
+        cxt = req.environ["nova.context"]
+        body = {'associate_availability_zone': 'az_1'}
+        fake_network_list = ['1111']
+        self.mox.StubOutWithMock(self.associate_controller.network_api, 'get')
+        self.mox.StubOutWithMock(db,
+                                 'availability_zone_associate_network_get')
+        self.mox.StubOutWithMock(db,
+                                 'availability_zone_associate_network_update')
+        self.associate_controller.network_api.get(cxt,
+            uuid).AndReturn(None)
+        db.availability_zone_associate_network_get(cxt, 'az_1').\
+            AndReturn(fake_network_list)
+        db.availability_zone_associate_network_update(cxt,
+            'az_1', fake_network_list).AndReturn(None)
+        self.mox.ReplayAll()
+        res = self.associate_controller._associate_availability_zone(
+            req, uuid, body)
+        self.assertEqual(res.status_int, 202)
+
+    def test_network_associate_availability_zone_duplicate(self):
+        uuid = FAKE_NETWORKS[0]['uuid']
+        req = fakes.HTTPRequest.blank('/v2/1234/os-networks/%s/action' % uuid)
+        cxt = req.environ["nova.context"]
+        body = {'associate_availability_zone': 'az_1'}
+        fake_network_list = [uuid]
+        self.mox.StubOutWithMock(self.associate_controller.network_api, 'get')
+        self.mox.StubOutWithMock(db,
+                                 'availability_zone_associate_network_get')
+        self.associate_controller.network_api.get(cxt,
+            uuid).AndReturn(None)
+        db.availability_zone_associate_network_get(cxt, 'az_1').\
+            AndReturn(fake_network_list)
+        self.mox.ReplayAll()
+        self.assertRaises(webob.exc.HTTPBadRequest,
+            self.associate_controller._associate_availability_zone,
+            req, uuid, body)
+
+    def test_network_disassociate_availability_zone(self):
+        uuid = FAKE_NETWORKS[0]['uuid']
+        req = fakes.HTTPRequest.blank('/v2/1234/os-networks/%s/action' % uuid)
+        cxt = req.environ["nova.context"]
+        body = {'disassociate_availability_zone': 'az_1'}
+        fake_network_list = [uuid]
+        self.mox.StubOutWithMock(self.associate_controller.network_api, 'get')
+        self.mox.StubOutWithMock(db,
+                                 'availability_zone_associate_network_get')
+        self.mox.StubOutWithMock(db,
+                                 'availability_zone_associate_network_update')
+        self.associate_controller.network_api.get(cxt,
+            uuid).AndReturn(None)
+        db.availability_zone_associate_network_get(cxt, 'az_1').\
+            AndReturn(fake_network_list)
+        db.availability_zone_associate_network_update(cxt,
+            'az_1', fake_network_list).AndReturn(None)
+        self.mox.ReplayAll()
+        res = self.associate_controller._disassociate_availability_zone(
+            req, uuid, body)
+        self.assertEqual(res.status_int, 202)
+
+    def test_network_disassociate_not_existed_availability_zone(self):
+        uuid = FAKE_NETWORKS[0]['uuid']
+        req = fakes.HTTPRequest.blank('/v2/1234/os-networks/%s/action' % uuid)
+        cxt = req.environ["nova.context"]
+        body = {'disassociate_availability_zone': 'az_1'}
+        fake_network_list = ['1111']
+        self.mox.StubOutWithMock(self.associate_controller.network_api, 'get')
+        self.mox.StubOutWithMock(db,
+                                 'availability_zone_associate_network_get')
+        self.associate_controller.network_api.get(cxt,
+            uuid).AndReturn(None)
+        db.availability_zone_associate_network_get(cxt, 'az_1').\
+            AndReturn(fake_network_list)
+        self.mox.ReplayAll()
+        self.assertRaises(webob.exc.HTTPBadRequest,
+            self.associate_controller._disassociate_availability_zone,
+            req, uuid, body)

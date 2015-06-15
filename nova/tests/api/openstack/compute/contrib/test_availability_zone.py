@@ -78,6 +78,10 @@ def fake_get_availability_zones(context):
     return ['nova'], []
 
 
+def fake_network(context, az_name):
+    return ['1111']
+
+
 class AvailabilityZoneApiTest(test.NoDBTestCase):
     def setUp(self):
         super(AvailabilityZoneApiTest, self).setUp()
@@ -86,20 +90,25 @@ class AvailabilityZoneApiTest(test.NoDBTestCase):
         self.stubs.Set(availability_zones, 'set_availability_zones',
                        fake_set_availability_zones)
         self.stubs.Set(servicegroup.API, 'service_is_up', fake_service_is_up)
+        self.stubs.Set(db, 'availability_zone_associate_network_get',
+                       fake_network)
 
     def test_filtered_availability_zones(self):
         az = availability_zone.AvailabilityZoneController()
+        ctxt = context.get_admin_context()
         zones = ['zone1', 'internal']
         expected = [{'zoneName': 'zone1',
-                    'zoneState': {'available': True},
-                     "hosts": None}]
-        result = az._get_filtered_availability_zones(zones, True)
+                     'zoneState': {'available': True},
+                     "hosts": None,
+                     'network': ['1111']}]
+        result = az._get_filtered_availability_zones(ctxt, zones, True)
         self.assertEqual(result, expected)
 
         expected = [{'zoneName': 'zone1',
-                    'zoneState': {'available': False},
-                     "hosts": None}]
-        result = az._get_filtered_availability_zones(zones, False)
+                     'zoneState': {'available': False},
+                     "hosts": None,
+                     'network': ['1111']}]
+        result = az._get_filtered_availability_zones(ctxt, zones, False)
         self.assertEqual(result, expected)
 
     def test_availability_zone_index(self):
@@ -114,9 +123,11 @@ class AvailabilityZoneApiTest(test.NoDBTestCase):
         self.assertEqual(zones[0]['zoneName'], u'zone-1')
         self.assertTrue(zones[0]['zoneState']['available'])
         self.assertIsNone(zones[0]['hosts'])
+        self.assertEqual(zones[0]['network'], ['1111'])
         self.assertEqual(zones[1]['zoneName'], u'zone-2')
         self.assertFalse(zones[1]['zoneState']['available'])
         self.assertIsNone(zones[1]['hosts'])
+        self.assertEqual(zones[1]['network'], ['1111'])
 
     def test_availability_zone_detail(self):
         def _formatZone(zone_dict):
@@ -211,7 +222,8 @@ class AvailabilityZoneApiTest(test.NoDBTestCase):
         expected_response = {'availabilityZoneInfo':
                                  [{'zoneState': {'available': True},
                              'hosts': {},
-                             'zoneName': 'nova'}]}
+                             'zoneName': 'nova',
+                             'network': ['1111']}]}
         self.stubs.Set(availability_zones, 'get_availability_zones',
                        fake_get_availability_zones)
         availabilityZone = availability_zone.AvailabilityZoneController()

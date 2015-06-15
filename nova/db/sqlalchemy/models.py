@@ -1060,6 +1060,7 @@ class AggregateMetadata(BASE, NovaBase):
     id = Column(Integer, primary_key=True)
     key = Column(String(255), nullable=False)
     value = Column(String(255), nullable=False)
+    network = Column(Text)
     aggregate_id = Column(Integer, ForeignKey('aggregates.id'), nullable=False)
 
 

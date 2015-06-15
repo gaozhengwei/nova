@@ -20,6 +20,7 @@ from nova.api.openstack import wsgi
 from nova.api.openstack import xmlutil
 from nova import availability_zones
 from nova import db
+from nova import exception
 from nova import servicegroup
 
 CONF = cfg.CONF
@@ -74,15 +75,28 @@ class AvailabilityZoneController(wsgi.Controller):
         super(AvailabilityZoneController, self).__init__()
         self.servicegroup_api = servicegroup.API()
 
-    def _get_filtered_availability_zones(self, zones, is_available):
+    def _get_network_by_availability_zone(self, context, az_name):
+        try:
+            # Note, internal and default(nova) availability zone is a
+            # config and will not be stored in database.
+            network = db.availability_zone_associate_network_get(
+                context, az_name)
+        except exception.AvailabilityZoneNotFound:
+            network = []
+
+        return network
+
+    def _get_filtered_availability_zones(self, context, zones, is_available):
         result = []
         for zone in zones:
             # Hide internal_service_availability_zone
             if zone == CONF.internal_service_availability_zone:
                 continue
+            network = self._get_network_by_availability_zone(context, zone)
             result.append({'zoneName': zone,
                            'zoneState': {'available': is_available},
-                           "hosts": None})
+                           'hosts': None,
+                           'network': network})
         return result
 
     def _describe_availability_zones(self, context, **kwargs):
@@ -91,9 +105,11 @@ class AvailabilityZoneController(wsgi.Controller):
             availability_zones.get_availability_zones(ctxt)
 
         filtered_available_zones = \
-            self._get_filtered_availability_zones(available_zones, True)
+            self._get_filtered_availability_zones(ctxt,
+                                                  available_zones, True)
         filtered_not_available_zones = \
-            self._get_filtered_availability_zones(not_available_zones, False)
+            self._get_filtered_availability_zones(ctxt,
+                                                  not_available_zones, False)
         return {'availabilityZoneInfo': filtered_available_zones +
                                         filtered_not_available_zones}
 
@@ -129,14 +145,18 @@ class AvailabilityZoneController(wsgi.Controller):
                     hosts[host][service['binary']] = {'available': alive,
                                       'active': True != service['disabled'],
                                       'updated_at': service['updated_at']}
+            network = self._get_network_by_availability_zone(context, zone)
             result.append({'zoneName': zone,
                            'zoneState': {'available': True},
-                           "hosts": hosts})
+                           'hosts': hosts,
+                           'network': network})
 
         for zone in not_available_zones:
+            network = self._get_network_by_availability_zone(context, zone)
             result.append({'zoneName': zone,
                            'zoneState': {'available': False},
-                           "hosts": None})
+                           'hosts': None,
+                           'network': network})
         return {'availabilityZoneInfo': result}
 
     @wsgi.serializers(xml=AvailabilityZonesTemplate)

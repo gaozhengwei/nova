@@ -1480,6 +1480,12 @@ class HostFiltersTestCase(test.NoDBTestCase):
             }
         }
 
+    def _make_filter_zones_request(self, zones):
+        ctxt = context.RequestContext('fake', 'fake', is_admin=False)
+        return {
+            'filter_availability_zones': zones,
+            'context': ctxt}
+
     def test_availability_zone_filter_same(self):
         filt_cls = self.class_map['AvailabilityZoneFilter']()
         service = {'availability_zone': 'nova'}
@@ -1492,6 +1498,22 @@ class HostFiltersTestCase(test.NoDBTestCase):
         filt_cls = self.class_map['AvailabilityZoneFilter']()
         service = {'availability_zone': 'nova'}
         request = self._make_zone_request('bad')
+        host = fakes.FakeHostState('host1', 'node1',
+                                   {'service': service})
+        self.assertFalse(filt_cls.host_passes(host, request))
+
+    def test_filter_availability_zones_filter_same(self):
+        filt_cls = self.class_map['AvailabilityZoneFilter']()
+        service = {'availability_zone': 'nova'}
+        request = self._make_filter_zones_request(['nova', 'az1'])
+        host = fakes.FakeHostState('host1', 'node1',
+                                   {'service': service})
+        self.assertTrue(filt_cls.host_passes(host, request))
+
+    def test_filter_availability_zones_filter_different(self):
+        filt_cls = self.class_map['AvailabilityZoneFilter']()
+        service = {'availability_zone': 'nova'}
+        request = self._make_filter_zones_request(['az1', 'az2'])
         host = fakes.FakeHostState('host1', 'node1',
                                    {'service': service})
         self.assertFalse(filt_cls.host_passes(host, request))

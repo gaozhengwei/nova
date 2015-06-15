@@ -1558,3 +1558,7 @@ class LiveMigrationWithOldNovaNotSafe(NovaException):
     msg_fmt = _("Host %(server)s is running an old version of Nova, "
                 "live migrations involving that version may cause data loss. "
                 "Upgrade Nova on %(server)s and try again.")
+
+
+class AvailabilityZoneNotFound(NovaException):
+    msg_fmt = _("Availability zone %(az_name)s not found.")

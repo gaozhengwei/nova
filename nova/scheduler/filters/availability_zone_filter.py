@@ -37,14 +37,26 @@ class AvailabilityZoneFilter(filters.BaseHostFilter):
         spec = filter_properties.get('request_spec', {})
         props = spec.get('instance_properties', {})
         availability_zone = props.get('availability_zone')
+        filter_availability_zones = filter_properties.get(
+            'filter_availability_zones', None)
 
+        context = filter_properties['context'].elevated()
+        metadata = db.aggregate_metadata_get_by_host(
+                     context, host_state.host, key='availability_zone')
+        default_az = CONF.default_availability_zone
         if availability_zone:
-            context = filter_properties['context'].elevated()
-            metadata = db.aggregate_metadata_get_by_host(
-                         context, host_state.host, key='availability_zone')
             if 'availability_zone' in metadata:
                 return availability_zone in metadata['availability_zone']
             else:
-                return availability_zone == CONF.default_availability_zone
+                return availability_zone == default_az
+
+        if filter_availability_zones:
+            if 'availability_zone' in metadata:
+                for az in metadata['availability_zone']:
+                    if az in filter_availability_zones:
+                        return True
+                return False
+            else:
+                return default_az in filter_availability_zones
 
         return True
