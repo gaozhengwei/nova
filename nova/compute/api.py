@@ -2525,6 +2525,8 @@ class API(base.Base):
         self._record_action_start(context, instance, instance_actions.RESIZE)
 
         filter_properties['host'] = host
+        if extra_instance_updates.get('localhost', False):
+            filter_properties['host'] = instance.host
         scheduler_hint = {'filter_properties': filter_properties}
         self.compute_task_api.resize_instance(context, instance,
                 extra_instance_updates, scheduler_hint=scheduler_hint,

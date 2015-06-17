@@ -324,13 +324,6 @@ class AdminActionsTest(CommonMixin, test.NoDBTestCase):
         self._test_migrate_cold_failed_with_exception(
             exception.ComputeServiceUnavailable(host='host'))
 
-    def test_migrate_cold_unable_to_migrate_to_self(self):
-        uuid = uuidutils.generate_uuid()
-        self._test_migrate_cold_failed_with_exception(
-                exception.UnableToMigrateToSelf(instance_id=uuid,
-                                                host='host'),
-                uuid=uuid)
-
     def _test_migrate_live_succeeded(self, param):
         self.mox.StubOutWithMock(self.compute_api, 'live_migrate')
         instance = self._stub_instance_get()

@@ -720,7 +720,6 @@ class ComputeTaskManager(base.Base):
             #do something, verify host.
             destination = host
             try:
-                self._check_destination_is_not_source(instance, destination)
                 self._check_host_is_up(context, destination)
                 self._check_destination_has_enough_memory(context,
                                                         instance, destination)
@@ -781,11 +780,6 @@ class ComputeTaskManager(base.Base):
                 self._set_vm_state_and_notify(context, 'migrate_server',
                                               updates, ex, request_spec)
                 quotas.rollback()
-
-    def _check_destination_is_not_source(self, instance, destination):
-        if destination == instance.host:
-            raise exception.UnableToMigrateToSelf(
-                    instance_id=instance.uuid, host=destination)
 
     def _check_host_is_up(self, context, host):
         try:

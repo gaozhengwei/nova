@@ -169,7 +169,7 @@ class ServerActionsControllerTest(test.TestCase):
                     'rebuild': {'imageRef': self.image_uuid,
                                 'adminPass': 'TNc53Dr8s7vw'}}
 
-        args_map = {'resize': (('2'), {}),
+        args_map = {'resize': (('2'), {'localhost': False}),
                     'confirmResize': ((), {}),
                     'reboot': (('HARD',), {}),
                     'rebuild': ((self.image_uuid, 'TNc53Dr8s7vw'),
@@ -774,7 +774,7 @@ class ServerActionsControllerTest(test.TestCase):
 
         self.resize_called = False
 
-        def resize_mock(*args):
+        def resize_mock(*args, **kwargs):
             self.resize_called = True
 
         self.stubs.Set(compute_api.API, 'resize', resize_mock)
@@ -783,6 +783,26 @@ class ServerActionsControllerTest(test.TestCase):
         body = self.controller._action_resize(req, FAKE_UUID, body)
 
         self.assertEqual(self.resize_called, True)
+
+    def test_resize_server_in_localhost(self):
+
+        body = dict(resize=dict(flavorRef="http://localhost/3"))
+        body['resize']['localhost'] = True
+
+        self.resize_called = False
+
+        def resize_mock(*args, **kwargs):
+            if kwargs.get('localhost', False):
+                self.localhost_resize_called = True
+            else:
+                self.localhost_resize_called = False
+
+        self.stubs.Set(compute_api.API, 'resize', resize_mock)
+
+        req = fakes.HTTPRequest.blank(self.url)
+        body = self.controller._action_resize(req, FAKE_UUID, body)
+
+        self.assertEqual(self.localhost_resize_called, True)
 
     def test_resize_server_no_flavor(self):
         body = dict(resize=dict())
@@ -825,7 +845,7 @@ class ServerActionsControllerTest(test.TestCase):
 
         raised, expected = map(iter, zip(*exceptions))
 
-        def _fake_resize(obj, context, instance, flavor_id):
+        def _fake_resize(obj, context, instance, flavor_id, **kwargs):
             self.resize_called += 1
             raise raised.next()
 

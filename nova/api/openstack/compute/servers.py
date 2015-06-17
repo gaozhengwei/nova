@@ -1300,6 +1300,11 @@ class Controller(wsgi.Controller):
         if 'auto_disk_config' in body['resize']:
             kwargs['auto_disk_config'] = body['resize']['auto_disk_config']
 
+        if 'localhost' in body['resize']:
+            kwargs['localhost'] = body['resize']['localhost']
+        else:
+            kwargs['localhost'] = False
+
         return self._resize(req, id, flavor_ref, **kwargs)
 
     @wsgi.response(202)
