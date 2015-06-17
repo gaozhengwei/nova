@@ -2,7 +2,7 @@
 
 Name:             openstack-nova
 Version:          2014.1.3
-Release:          12%{?dist}
+Release:          13%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
@@ -884,6 +884,18 @@ fi
 %endif
 
 %changelog
+* Thu Jun 25 2015 Deliang Fan <fandeliang@letv.com> 2014.1.3-13
+- Avoid resizing disk if the disk size doesn't change
+  OPENSTACK-334
+- cold migration: Adds support for choosing host
+  OPENSTACK-331
+- Support for associate network with availability zone
+  OPENSTACK-344
+- Add support for Disk qos
+  OPENSTACK-343
+- Enable choosing the same host to resize instance
+  OPENSTACK-335
+
 * Fri Feb 27 2015 Deliang Fan <fandeliang@letv.com> 2014.1.3-12
 - Remove websocketproxy workaround
 - Update websocketproxy to work with websockify 0.6
