@@ -866,8 +866,10 @@ class API(base.Base):
         # (= device_id) are known here, so pass it as a result.
         result['fixed_ip'] = {'address': fip['fixed_ip_address']}
         if fip['port_id']:
-            instance_uuid = port_dict[fip['port_id']]['device_id']
-            result['instance'] = {'uuid': instance_uuid}
+            instance_uuid = port_dict.get(fip['port_id'],
+                                          {}).get('device_id', None)
+            result['instance'] = ({'uuid': instance_uuid}
+                                  if instance_uuid else None)
         else:
             result['instance'] = None
         return result
