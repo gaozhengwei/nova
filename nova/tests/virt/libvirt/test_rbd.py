@@ -78,6 +78,7 @@ class RbdTestCase(test.NoDBTestCase):
         self.driver = rbd_utils.RBDDriver(self.rbd_pool, None, None)
 
         self.volume_name = u'volume-00000001'
+        self.snap_name = u'test-snap'
 
     def tearDown(self):
         super(RbdTestCase, self).tearDown()
@@ -281,3 +282,72 @@ class RbdTestCase(test.NoDBTestCase):
         rbd.remove.assert_called_once_with(client.ioctx, '12345_test')
         client.__enter__.assert_called_once_with()
         client.__exit__.assert_called_once_with(None, None, None)
+
+    @mock.patch.object(rbd_utils, 'RBDVolumeProxy')
+    def test_create_snap(self, mock_proxy):
+        proxy = mock_proxy.return_value
+        proxy.__enter__.return_value = proxy
+        self.driver.create_snap(self.volume_name, self.snap_name)
+        proxy.create_snap.assert_called_once_with(self.snap_name)
+
+    @mock.patch.object(rbd_utils, 'RBDVolumeProxy')
+    def test_create_protected_snap(self, mock_proxy):
+        proxy = mock_proxy.return_value
+        proxy.__enter__.return_value = proxy
+        proxy.is_protected_snap.return_value = False
+        self.driver.create_snap(self.volume_name, self.snap_name, protect=True)
+        proxy.create_snap.assert_called_once_with(self.snap_name)
+        proxy.is_protected_snap.assert_called_once_with(self.snap_name)
+        proxy.protect_snap.assert_called_once_with(self.snap_name)
+
+    @mock.patch.object(rbd_utils, 'RBDVolumeProxy')
+    def test_remove_snap(self, mock_proxy):
+        proxy = mock_proxy.return_value
+        proxy.__enter__.return_value = proxy
+        proxy.list_snaps.return_value = [{'name': self.snap_name}]
+        proxy.is_protected_snap.return_value = False
+        self.driver.remove_snap(self.volume_name, self.snap_name)
+        proxy.remove_snap.assert_called_once_with(self.snap_name)
+
+    @mock.patch.object(rbd_utils, 'RBDVolumeProxy')
+    def test_remove_snap_force(self, mock_proxy):
+        proxy = mock_proxy.return_value
+        proxy.__enter__.return_value = proxy
+        proxy.is_protected_snap.return_value = True
+        proxy.list_snaps.return_value = [{'name': self.snap_name}]
+        self.driver.remove_snap(self.volume_name, self.snap_name, force=True)
+        proxy.is_protected_snap.assert_called_once_with(self.snap_name)
+        proxy.unprotect_snap.assert_called_once_with(self.snap_name)
+        proxy.remove_snap.assert_called_once_with(self.snap_name)
+
+    @mock.patch.object(rbd_utils, 'RBDVolumeProxy')
+    def test_remove_snap_does_nothing_when_no_snapshot(self, mock_proxy):
+        proxy = mock_proxy.return_value
+        proxy.__enter__.return_value = proxy
+        proxy.list_snaps.return_value = [{'name': 'some-other-snaphot'}]
+        self.driver.remove_snap(self.volume_name, self.snap_name)
+        self.assertFalse(proxy.remove_snap.called)
+
+    @mock.patch.object(rbd_utils, 'RBDVolumeProxy')
+    def test_parent_info(self, mock_proxy):
+        proxy = mock_proxy.return_value
+        proxy.__enter__.return_value = proxy
+        self.driver.parent_info(self.volume_name)
+        proxy.parent_info.assert_called_once_with()
+
+    @mock.patch.object(rbd_utils, 'rbd')
+    @mock.patch.object(rbd_utils, 'RBDVolumeProxy')
+    def test_parent_info_throws_exception_on_error(self, mock_proxy, mock_rbd):
+        setattr(mock_rbd, 'ImageNotFound', test.TestingException)
+        proxy = mock_proxy.return_value
+        proxy.__enter__.return_value = proxy
+        proxy.parent_info.side_effect = test.TestingException
+        self.assertRaises(exception.ImageUnacceptable,
+                          self.driver.parent_info, self.volume_name)
+
+    @mock.patch.object(rbd_utils, 'RBDVolumeProxy')
+    def test_flatten(self, mock_proxy):
+        proxy = mock_proxy.return_value
+        proxy.__enter__.return_value = proxy
+        self.driver.flatten(self.volume_name)
+        proxy.flatten.assert_called_once_with()

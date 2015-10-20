@@ -2739,6 +2739,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
                   'expected_state': task_states.IMAGE_PENDING_UPLOAD}}]
         func_call_matcher = matchers.FunctionCallMatcher(expected_calls)
 
@@ -2786,6 +2794,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
@@ -2841,6 +2857,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
                   'expected_state': task_states.IMAGE_PENDING_UPLOAD}}]
         func_call_matcher = matchers.FunctionCallMatcher(expected_calls)
 
@@ -2889,6 +2913,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
@@ -2945,6 +2977,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
                   'expected_state': task_states.IMAGE_PENDING_UPLOAD}}]
         func_call_matcher = matchers.FunctionCallMatcher(expected_calls)
 
@@ -2990,6 +3030,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
@@ -3042,6 +3090,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
                   'expected_state': task_states.IMAGE_PENDING_UPLOAD}}]
         func_call_matcher = matchers.FunctionCallMatcher(expected_calls)
 
@@ -3089,6 +3145,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
@@ -3143,6 +3207,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
                   'expected_state': task_states.IMAGE_PENDING_UPLOAD}}]
         func_call_matcher = matchers.FunctionCallMatcher(expected_calls)
 
@@ -3186,6 +3258,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
@@ -3233,6 +3313,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,
@@ -3284,6 +3372,14 @@ class LibvirtConnTestCase(test.TestCase):
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_UPLOADING,
+                  'expected_state': task_states.IMAGE_PENDING_UPLOAD}},
+            {'args': (),
+             'kwargs':
+                 {'task_state': task_states.IMAGE_PENDING_UPLOAD,
+                  'expected_state': task_states.IMAGE_UPLOADING}},
             {'args': (),
              'kwargs':
                  {'task_state': task_states.IMAGE_UPLOADING,

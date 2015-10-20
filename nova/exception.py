@@ -1576,3 +1576,9 @@ class LiveMigrationWithOldNovaNotSafe(NovaException):
 
 class AvailabilityZoneNotFound(NovaException):
     msg_fmt = _("Availability zone %(az_name)s not found.")
+
+
+class Forbidden(NovaException):
+    ec2_code = 'AuthFailure'
+    msg_fmt = _("Not authorized.")
+    code = 403
