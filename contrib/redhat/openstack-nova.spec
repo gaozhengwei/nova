@@ -2,7 +2,7 @@
 
 Name:             openstack-nova
 Version:          2014.1.3
-Release:          13%{?dist}
+Release:          14%{?dist}
 Summary:          OpenStack Compute (nova)
 
 Group:            Applications/System
@@ -884,6 +884,10 @@ fi
 %endif
 
 %changelog
+* Thu Nov 04 2015 Deliang Fan <fandeliang@letv.com> 2014.1.3-14
+- libvirt: make snapshot use RBD snapshot/clone when available
+- Ignore the gateway IP device
+
 * Thu Jun 25 2015 Deliang Fan <fandeliang@letv.com> 2014.1.3-13
 - Avoid resizing disk if the disk size doesn't change
   OPENSTACK-334
