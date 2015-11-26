@@ -2,4 +2,4 @@
 host=review.et.letv.com
 port=29418
 project=iaas/openstack/nova.git
-defaultbranch=icehouse
+defaultbranch=private
