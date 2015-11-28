@@ -23,6 +23,7 @@ from sqlalchemy import Column, Index, Integer, BigInteger, Enum, String, schema
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import ForeignKey, DateTime, Boolean, Text, Float
+from sqlalchemy import orm
 from sqlalchemy.orm import relationship, backref, object_mapper
 from oslo.config import cfg
 
@@ -304,8 +305,24 @@ class InstanceInfoCache(BASE, NovaBase):
 
     instance_uuid = Column(String(36), ForeignKey('instances.uuid'),
                            nullable=False)
-    instance = relationship(Instance,
-                            backref=backref('info_cache', uselist=False),
+    instance = orm.relationship(Instance,
+                            backref=orm.backref('info_cache', uselist=False),
+                            foreign_keys=instance_uuid,
+                            primaryjoin=instance_uuid == Instance.uuid)
+
+
+class InstanceExtra(BASE, NovaBase):
+    __tablename__ = 'instance_extra'
+    __table_args__ = (
+        Index('instance_extra_idx', 'instance_uuid'),)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    instance_uuid = Column(String(36), ForeignKey('instances.uuid'),
+                           nullable=False)
+    numa_topology = Column(Text)
+    pci_requests = Column(Text)
+    instance = orm.relationship(Instance,
+                            backref=orm.backref('numa_topology',
+                                                uselist=False),
                             foreign_keys=instance_uuid,
                             primaryjoin=instance_uuid == Instance.uuid)
 
@@ -1419,6 +1436,9 @@ class PciDevice(BASE, NovaBase):
     label = Column(String(255), nullable=False)
 
     status = Column(String(36), nullable=False)
+    # the request_id is used to identify a device that is allocated for a
+    # particular request
+    request_id = Column(String(36), nullable=True)
 
     extra_info = Column(Text)
 

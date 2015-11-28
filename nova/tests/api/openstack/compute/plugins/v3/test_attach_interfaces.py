@@ -13,6 +13,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import mock
 from oslo.config import cfg
 
 from nova.api.openstack.compute.plugins.v3 import attach_interfaces
@@ -120,9 +121,9 @@ def fake_get_instance(self, *args, **kwargs):
 class InterfaceAttachTests(test.NoDBTestCase):
     def setUp(self):
         super(InterfaceAttachTests, self).setUp()
-        self.flags(neutron_auth_strategy=None)
-        self.flags(neutron_url='http://anyhost/')
-        self.flags(neutron_url_timeout=30)
+        self.flags(auth_strategy=None, group='neutron')
+        self.flags(url='http://anyhost/', group='neutron')
+        self.flags(url_timeout=30, group='neutron')
         self.stubs.Set(network_api.API, 'show_port', fake_show_port)
         self.stubs.Set(network_api.API, 'list_ports', fake_list_ports)
         self.stubs.Set(compute_api.API, 'get', fake_get_instance)
@@ -322,3 +323,35 @@ class InterfaceAttachTests(test.NoDBTestCase):
         self.assertRaises(exc.HTTPBadRequest,
                           attachments.create, req, FAKE_UUID1,
                           jsonutils.loads(req.body))
+
+
+class InterfaceAttachTestsWithMock(test.NoDBTestCase):
+    def setUp(self):
+        super(InterfaceAttachTestsWithMock, self).setUp()
+        self.flags(auth_strategy=None, group='neutron')
+        self.flags(url='http://anyhost/', group='neutron')
+        self.flags(url_timeout=30, group='neutron')
+        self.context = context.get_admin_context()
+
+    @mock.patch.object(compute_api.API, 'get')
+    @mock.patch.object(compute_api.API, 'attach_interface')
+    def test_attach_interface_fixed_ip_already_in_use(self,
+                                                      attach_mock,
+                                                      get_mock):
+        get_mock.side_effect = fake_get_instance
+        attach_mock.side_effect = exception.FixedIpAlreadyInUse(
+            address='10.0.3.2', instance_uuid=FAKE_UUID1)
+        attachments = attach_interfaces.InterfaceAttachmentController()
+        req = webob.Request.blank(
+            '/v3/servers/fake/os-attach-interfaces/attach')
+        req.method = 'POST'
+        req.body = jsonutils.dumps({})
+        req.headers['content-type'] = 'application/json'
+        req.environ['nova.context'] = self.context
+        self.assertRaises(exc.HTTPBadRequest,
+                          attachments.create, req, FAKE_UUID1,
+                          jsonutils.loads(req.body))
+        attach_mock.assert_called_once_with(self.context, {}, None, None, None)
+        get_mock.assert_called_once_with(self.context, FAKE_UUID1,
+                                         want_objects=True,
+                                         expected_attrs=None)

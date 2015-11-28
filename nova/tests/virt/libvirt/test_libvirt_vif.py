@@ -22,6 +22,7 @@ from nova import exception
 from nova.network import linux_net
 from nova.network import model as network_model
 from nova.openstack.common import processutils
+from nova.pci import pci_utils
 from nova import test
 from nova.tests.virt.libvirt import fakelibvirt
 from nova import utils
@@ -159,16 +160,43 @@ class LibvirtVifTestCase(test.TestCase):
                                     address='ca:fe:de:ad:be:ef',
                                     network=network_8021,
                                     type=network_model.VIF_TYPE_802_QBH,
-                                    devname='tap-xxx-yyy-zzz',
+                                    vnic_type=network_model.VNIC_TYPE_DIRECT,
                                     ovs_interfaceid=None,
-                                    qbh_params=network_model.VIF8021QbhParams(
-                                    profileid="xxx-yyy-zzz"))
+                                    details={
+                                        network_model.VIF_DETAILS_PROFILEID:
+                                        'MyPortProfile'},
+                                    profile={'pci_vendor_info': '1137:0043',
+                                             'pci_slot': '0000:0a:00.1',
+                                             'physical_network': 'phynet1'})
+
+    vif_hw_veb = network_model.VIF(id='vif-xxx-yyy-zzz',
+                                   address='ca:fe:de:ad:be:ef',
+                                   network=network_8021,
+                                   type=network_model.VIF_TYPE_HW_VEB,
+                                   vnic_type=network_model.VNIC_TYPE_DIRECT,
+                                   ovs_interfaceid=None,
+                                   details={
+                                       network_model.VIF_DETAILS_VLAN: '100'},
+                                   profile={'pci_vendor_info': '1137:0043',
+                                            'pci_slot': '0000:0a:00.1',
+                                            'physical_network': 'phynet1'})
+
+    vif_macvtap = network_model.VIF(id='vif-xxx-yyy-zzz',
+                                    address='ca:fe:de:ad:be:ef',
+                                    network=network_8021,
+                                    type=network_model.VIF_TYPE_HW_VEB,
+                                    vnic_type=network_model.VNIC_TYPE_MACVTAP,
+                                    ovs_interfaceid=None,
+                                    details={
+                                      network_model.VIF_DETAILS_VLAN: '100'},
+                                    profile={'pci_vendor_info': '1137:0043',
+                                             'pci_slot': '0000:0a:00.1',
+                                             'physical_network': 'phynet1'})
 
     vif_8021qbg = network_model.VIF(id='vif-xxx-yyy-zzz',
                                     address='ca:fe:de:ad:be:ef',
                                     network=network_8021,
                                     type=network_model.VIF_TYPE_802_QBG,
-                                    devname='tap-xxx-yyy-zzz',
                                     ovs_interfaceid=None,
                                     qbg_params=network_model.VIF8021QbgParams(
                                     managerid="xxx-yyy-zzz",
@@ -283,6 +311,20 @@ class LibvirtVifTestCase(test.TestCase):
             driver = node.find("driver").get("name")
             self.assertEqual(driver, driver_want)
 
+    def _assertTypeAndPciEquals(self, node, type, vif):
+        self.assertEqual(node.get("type"), type)
+        address = node.find("source").find("address")
+        addr_type = address.get("type")
+        self.assertEqual("pci", addr_type)
+        pci_slot = "%(domain)s:%(bus)s:%(slot)s.%(func)s" % {
+                     'domain': address.get("domain")[2:],
+                     'bus': address.get("bus")[2:],
+                     'slot': address.get("slot")[2:],
+                     'func': address.get("function")[2:]}
+
+        pci_slot_want = vif['profile']['pci_slot']
+        self.assertEqual(pci_slot, pci_slot_want)
+
     def _get_conf(self):
         conf = vconfig.LibvirtConfigGuest()
         conf.virt_type = "qemu"
@@ -299,7 +341,7 @@ class LibvirtVifTestCase(test.TestCase):
         default_inst_type['extra_specs'] = dict(extra_specs + quota_bandwidth)
         conf = self._get_conf()
         nic = driver.get_config(self.instance, vif, image_meta,
-                                default_inst_type)
+                                default_inst_type, CONF.libvirt.virt_type)
         conf.add_device(nic)
         return conf.to_xml()
 
@@ -422,7 +464,6 @@ class LibvirtVifTestCase(test.TestCase):
         self.flags(firewall_driver="nova.virt.firewall.NoopFirewallDriver")
         self._test_model_qemu(
             self.vif_bridge,
-            self.vif_8021qbh,
             self.vif_8021qbg,
             self.vif_iovisor,
             self.vif_mlnx,
@@ -436,7 +477,6 @@ class LibvirtVifTestCase(test.TestCase):
             self.vif_bridge,
             self.vif_ovs,
             self.vif_ivs,
-            self.vif_8021qbh,
             self.vif_8021qbg,
             self.vif_iovisor,
             self.vif_mlnx,
@@ -483,10 +523,10 @@ class LibvirtVifTestCase(test.TestCase):
         self.flags(firewall_driver="nova.virt.firewall.NoopFirewallDriver")
         xml = self._get_instance_xml(d, vif)
         node = self._get_node(xml)
-        self._assertTypeAndMacEquals(node, "ethernet", "target", "dev",
+        self._assertTypeAndMacEquals(node, "bridge", "target", "dev",
                                      self.vif_ovs, prefix=dev_prefix)
-        script = node.find("script").get("path")
-        self.assertEqual(script, "")
+        # script = node.find("script").get("path")
+        # self.assertEqual(script, "")
 
     def test_ovs_ethernet_driver(self):
         d = vif.LibvirtGenericVIFDriver(self._get_conn(ver=9010))
@@ -561,6 +601,46 @@ class LibvirtVifTestCase(test.TestCase):
             device_exists.assert_has_calls(calls['device_exists'])
             execute.assert_has_calls(calls['execute'])
             delete_ovs_vif_port.assert_has_calls(calls['delete_ovs_vif_port'])
+
+    @mock.patch.object(utils, 'execute')
+    @mock.patch.object(pci_utils, 'get_ifname_by_pci_address')
+    @mock.patch.object(pci_utils, 'get_vf_num_by_pci_address', return_value=1)
+    def _test_hw_veb_op(self, op, vlan, mock_get_vf_num, mock_get_ifname,
+                        mock_execute):
+        mock_get_ifname.side_effect = ['eth1', 'eth13']
+        exit_code = [0, 2, 254]
+        port_state = 'up' if vlan > 0 else 'down'
+        calls = {
+            'get_ifname':
+                [mock.call(self.vif_macvtap['profile']['pci_slot'],
+                           pf_interface=True),
+                 mock.call(self.vif_macvtap['profile']['pci_slot'])],
+            'get_vf_num':
+                [mock.call(self.vif_macvtap['profile']['pci_slot'])],
+            'execute': [mock.call('ip', 'link', 'set', 'eth1',
+                                  'vf', 1, 'mac', self.vif_macvtap['address'],
+                                  'vlan', vlan,
+                                  run_as_root=True,
+                                  check_exit_code=exit_code),
+                        mock.call('ip', 'link', 'set',
+                                  'eth13', port_state,
+                                  run_as_root=True,
+                                  check_exit_code=exit_code)]
+        }
+        op(None, self.vif_macvtap)
+        mock_get_ifname.assert_has_calls(calls['get_ifname'])
+        mock_get_vf_num.assert_has_calls(calls['get_vf_num'])
+        mock_execute.assert_has_calls(calls['execute'])
+
+    def test_plug_hw_veb(self):
+        d = vif.LibvirtGenericVIFDriver(self._get_conn(ver=9010))
+        self._test_hw_veb_op(
+            d.plug_hw_veb,
+            self.vif_macvtap['details'][network_model.VIF_DETAILS_VLAN])
+
+    def test_unplug_hw_veb(self):
+        d = vif.LibvirtGenericVIFDriver(self._get_conn(ver=9010))
+        self._test_hw_veb_op(d.unplug_hw_veb, 0)
 
     def test_unplug_ovs_hybrid_bridge_does_not_exist(self):
         calls = {
@@ -723,7 +803,7 @@ class LibvirtVifTestCase(test.TestCase):
         br_want = self.vif_midonet['devname']
         xml = self._get_instance_xml(d, self.vif_ovs_filter_cap)
         node = self._get_node(xml)
-        self._assertTypeAndMacEquals(node, "ethernet", "target", "dev",
+        self._assertTypeAndMacEquals(node, "bridge", "target", "dev",
                                      self.vif_ovs_filter_cap, br_want)
 
     def _check_neutron_hybrid_driver(self, d, vif, br_want):
@@ -775,20 +855,45 @@ class LibvirtVifTestCase(test.TestCase):
         d = vif.LibvirtGenericVIFDriver(self._get_conn())
         xml = self._get_instance_xml(d, self.vif_8021qbh)
         node = self._get_node(xml)
-        self._assertTypeEquals(node, "direct", "source", "dev", "eth0")
+        self._assertTypeAndPciEquals(node, "hostdev", self.vif_8021qbh)
         self._assertMacEquals(node, self.vif_8021qbh)
         vp = node.find("virtualport")
         self.assertEqual(vp.get("type"), "802.1Qbh")
         profile_id_found = False
         for p_elem in vp.findall("parameters"):
-            wantparams = self.vif_8021qbh['qbh_params']
+            details = self.vif_8021qbh["details"]
             profile_id = p_elem.get("profileid", None)
             if profile_id:
                 self.assertEqual(profile_id,
-                                 wantparams['profileid'])
+                                 details[network_model.VIF_DETAILS_PROFILEID])
                 profile_id_found = True
 
         self.assertTrue(profile_id_found)
+
+    def test_hw_veb_driver(self):
+        d = vif.LibvirtGenericVIFDriver(self._get_conn())
+        xml = self._get_instance_xml(d, self.vif_hw_veb)
+        node = self._get_node(xml)
+        self._assertTypeAndPciEquals(node, "hostdev", self.vif_hw_veb)
+        self._assertMacEquals(node, self.vif_hw_veb)
+        vlan = node.find("vlan").find("tag").get("id")
+        vlan_want = self.vif_hw_veb["details"]["vlan"]
+        self.assertEqual(vlan, vlan_want)
+
+    @mock.patch.object(pci_utils, 'get_ifname_by_pci_address',
+                       return_value='eth1')
+    def test_hw_veb_driver_macvtap(self, mock_get_ifname):
+        d = vif.LibvirtGenericVIFDriver(self._get_conn())
+        xml = self._get_instance_xml(d, self.vif_macvtap)
+        node = self._get_node(xml)
+        self.assertEqual(node.get("type"), "direct")
+        self._assertTypeEquals(node, "direct", "source",
+                               "dev", "eth1")
+        self._assertTypeEquals(node, "direct", "source",
+                               "mode", "passthrough")
+        self._assertMacEquals(node, self.vif_macvtap)
+        vlan = node.find("vlan")
+        self.assertIsNone(vlan)
 
     def test_generic_iovisor_driver(self):
         d = vif.LibvirtGenericVIFDriver(self._get_conn())

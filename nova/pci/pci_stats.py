@@ -17,9 +17,11 @@
 import copy
 
 from nova import exception
+from nova.openstack.common.gettextutils import _
 from nova.openstack.common import jsonutils
 from nova.openstack.common import log as logging
 from nova.pci import pci_utils
+from nova.pci import pci_whitelist
 
 
 LOG = logging.getLogger(__name__)
@@ -49,29 +51,57 @@ class PciDeviceStats(object):
     This summary information will be helpful for cloud management also.
     """
 
-    pool_keys = ['product_id', 'vendor_id', 'extra_info']
+    pool_keys = ['product_id', 'vendor_id']
 
     def __init__(self, stats=None):
         super(PciDeviceStats, self).__init__()
         self.pools = jsonutils.loads(stats) if stats else []
+        self.pools.sort(self.pool_cmp)
 
-    def _equal_properties(self, dev, entry):
+    def _equal_properties(self, dev, entry, matching_keys):
         return all(dev.get(prop) == entry.get(prop)
-                   for prop in self.pool_keys)
+                   for prop in matching_keys)
 
-    def _get_first_pool(self, dev):
+    def _find_pool(self, dev_pool):
         """Return the first pool that matches dev."""
-        return next((pool for pool in self.pools
-                    if self._equal_properties(dev, pool)), None)
+        for pool in self.pools:
+            pool_keys = pool.copy()
+            del pool_keys['count']
+            del pool_keys['devices']
+            if (len(pool_keys.keys()) == len(dev_pool.keys()) and
+                self._equal_properties(dev_pool, pool_keys, dev_pool.keys())):
+                return pool
+
+    def _create_pool_keys_from_dev(self, dev):
+        """create a stats pool dict that this dev is supposed to be part of
+
+        Note that this pool dict contains the stats pool's keys and their
+        values. 'count' and 'devices' are not included.
+        """
+        # Don't add a device that doesn't have a matching device spec.
+        # This can happen during initial sync up with the controller
+        devspec = pci_whitelist.get_pci_device_devspec(dev)
+        if not devspec:
+            return
+        tags = devspec.get_tags()
+        pool = dict((k, dev.get(k)) for k in self.pool_keys)
+        if tags:
+            pool.update(tags)
+        return pool
 
     def add_device(self, dev):
-        """Add a device to the first matching pool."""
-        pool = self._get_first_pool(dev)
-        if not pool:
-            pool = dict((k, dev.get(k)) for k in self.pool_keys)
-            pool['count'] = 0
-            self.pools.append(pool)
-        pool['count'] += 1
+        """Add a device to its matching pool."""
+        dev_pool = self._create_pool_keys_from_dev(dev)
+        if dev_pool:
+            pool = self._find_pool(dev_pool)
+            if not pool:
+                dev_pool['count'] = 0
+                dev_pool['devices'] = []
+                self.pools.append(dev_pool)
+                self.pools.sort(self.pool_cmp)
+                pool = dev_pool
+            pool['count'] += 1
+            pool['devices'].append(dev)
 
     @staticmethod
     def _decrease_pool_count(pool_list, pool, count=1):
@@ -87,13 +117,58 @@ class PciDeviceStats(object):
             pool_list.remove(pool)
         return count
 
-    def consume_device(self, dev):
+    def remove_device(self, dev):
         """Remove one device from the first pool that it matches."""
-        pool = self._get_first_pool(dev)
-        if not pool:
-            raise exception.PciDevicePoolEmpty(
-                compute_node_id=dev.compute_node_id, address=dev.address)
-        self._decrease_pool_count(self.pools, pool)
+        dev_pool = self._create_pool_keys_from_dev(dev)
+        if dev_pool:
+            pool = self._find_pool(dev_pool)
+            if not pool:
+                raise exception.PciDevicePoolEmpty(
+                    compute_node_id=dev.compute_node_id, address=dev.address)
+            pool['devices'].remove(dev)
+            self._decrease_pool_count(self.pools, pool)
+
+    def get_free_devs(self):
+        free_devs = []
+        for pool in self.pools:
+            free_devs.extend(pool['devices'])
+        return free_devs
+
+    def consume_requests(self, pci_requests):
+        alloc_devices = []
+        for request in pci_requests:
+            count = request.count
+            spec = request.spec
+            # For now, keep the same algorithm as during scheduling:
+            # a spec may be able to match multiple pools.
+            pools = self._filter_pools_for_spec(self.pools, spec)
+            # Failed to allocate the required number of devices
+            # Return the devices already allocated back to their pools
+            if sum([pool['count'] for pool in pools]) < count:
+                LOG.error(_("Failed to allocate PCI devices for instance."
+                          " Unassigning devices back to pools."
+                          " This should not happen, since the scheduler"
+                          " should have accurate information, and allocation"
+                          " during claims is controlled via a hold"
+                          " on the compute node semaphore"))
+                for d in range(len(alloc_devices)):
+                    self.add_device(alloc_devices.pop())
+                raise exception.PciDeviceRequestFailed(requests=pci_requests)
+
+            for pool in pools:
+                if pool['count'] >= count:
+                    num_alloc = count
+                else:
+                    num_alloc = pool['count']
+                count -= num_alloc
+                pool['count'] -= num_alloc
+                for d in range(num_alloc):
+                    pci_dev = pool['devices'].pop()
+                    pci_dev.request_id = request.request_id
+                    alloc_devices.append(pci_dev)
+                if count == 0:
+                    break
+        return alloc_devices
 
     @staticmethod
     def _filter_pools_for_spec(pools, request_specs):
@@ -133,8 +208,17 @@ class PciDeviceStats(object):
         if not all([self._apply_request(self.pools, r) for r in requests]):
             raise exception.PciDeviceRequestFailed(requests=requests)
 
+    @staticmethod
+    def pool_cmp(dev1, dev2):
+        return len(dev1) - len(dev2)
+
     def __iter__(self):
-        return iter(self.pools)
+        # 'devices' shouldn't be part of stats
+        pools = []
+        for pool in self.pools:
+            tmp = dict((k, v) for k, v in pool.iteritems() if k != 'devices')
+            pools.append(tmp)
+        return iter(pools)
 
     def clear(self):
         """Clear all the stats maintained."""

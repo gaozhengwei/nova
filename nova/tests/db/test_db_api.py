@@ -2134,6 +2134,25 @@ class InstanceMetadataTestCase(test.TestCase):
         self.assertEqual(metadata, {'new_key': 'new_value'})
 
 
+class InstanceExtraTestCase(test.TestCase):
+    def setUp(self):
+        super(InstanceExtraTestCase, self).setUp()
+        self.ctxt = context.get_admin_context()
+        self.instance = db.instance_create(self.ctxt, {})
+
+    def test_instance_extra_get_by_uuid_instance_create(self):
+        inst_extra = db.instance_extra_get_by_instance_uuid(
+                self.ctxt, self.instance['uuid'])
+        self.assertIsNotNone(inst_extra)
+
+    def test_instance_extra_update_by_uuid(self):
+        db.instance_extra_update_by_uuid(self.ctxt, self.instance['uuid'],
+                                         {'numa_topology': 'changed'})
+        inst_extra = db.instance_extra_get_by_instance_uuid(
+            self.ctxt, self.instance['uuid'])
+        self.assertEqual('changed', inst_extra.numa_topology)
+
+
 class ServiceTestCase(test.TestCase, ModelsObjectComparatorMixin):
     def setUp(self):
         super(ServiceTestCase, self).setUp()
@@ -7080,6 +7099,7 @@ class PciDeviceDBApiTestCase(test.TestCase, ModelsObjectComparatorMixin):
                 'label': 'label_8086_1520',
                 'status': 'available',
                 'instance_uuid': '00000000-0000-0000-0000-000000000010',
+                'request_id': None,
                 }, {'id': 3356,
                 'compute_node_id': 1,
                 'address': '0000:0f:03.7',
@@ -7091,6 +7111,7 @@ class PciDeviceDBApiTestCase(test.TestCase, ModelsObjectComparatorMixin):
                 'label': 'label_8086_1520',
                 'status': 'available',
                 'instance_uuid': '00000000-0000-0000-0000-000000000010',
+                'request_id': None,
                 }
 
     def _create_fake_pci_devs(self):

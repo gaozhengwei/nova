@@ -19,6 +19,7 @@ import datetime
 import uuid
 
 import iso8601
+import mock
 import mox
 from oslo.config import cfg
 import six.moves.urllib.parse as urlparse
@@ -198,21 +199,21 @@ class ServersControllerTest(ControllerTest):
         uuid = 'br-00000000-0000-0000-0000-000000000000'
         requested_networks = [{'uuid': uuid}]
         res = self.controller._get_requested_networks(requested_networks)
-        self.assertIn((uuid, None), res)
+        self.assertIn((uuid, None), res.as_tuples())
 
     def test_requested_networks_neutronv2_enabled_with_port(self):
         self.flags(network_api_class='nova.network.neutronv2.api.API')
         port = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
         requested_networks = [{'port': port}]
         res = self.controller._get_requested_networks(requested_networks)
-        self.assertEqual(res, [(None, None, port)])
+        self.assertEqual([(None, None, port, None)], res.as_tuples())
 
     def test_requested_networks_neutronv2_enabled_with_network(self):
         self.flags(network_api_class='nova.network.neutronv2.api.API')
         network = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
         requested_networks = [{'uuid': network}]
         res = self.controller._get_requested_networks(requested_networks)
-        self.assertEqual(res, [(network, None, None)])
+        self.assertEqual([(network, None, None, None)], res.as_tuples())
 
     def test_requested_networks_neutronv2_enabled_with_network_and_port(self):
         self.flags(network_api_class='nova.network.neutronv2.api.API')
@@ -220,7 +221,7 @@ class ServersControllerTest(ControllerTest):
         port = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
         requested_networks = [{'uuid': network, 'port': port}]
         res = self.controller._get_requested_networks(requested_networks)
-        self.assertEqual(res, [(None, None, port)])
+        self.assertEqual([(None, None, port, None)], res.as_tuples())
 
     def test_requested_networks_neutronv2_enabled_conflict_on_fixed_ip(self):
         self.flags(network_api_class='nova.network.neutronv2.api.API')
@@ -249,7 +250,7 @@ class ServersControllerTest(ControllerTest):
         port = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
         requested_networks = [{'uuid': network, 'port': port}]
         res = self.controller._get_requested_networks(requested_networks)
-        self.assertEqual(res, [(None, None, port)])
+        self.assertEqual([(None, None, port, None)], res.as_tuples())
 
     def test_requested_networks_neutronv2_subclass_with_port(self):
         cls = 'nova.tests.api.openstack.compute.test_servers.NeutronV2Subclass'
@@ -257,7 +258,7 @@ class ServersControllerTest(ControllerTest):
         port = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
         requested_networks = [{'port': port}]
         res = self.controller._get_requested_networks(requested_networks)
-        self.assertEqual(res, [(None, None, port)])
+        self.assertEqual([(None, None, port, None)], res.as_tuples())
 
     def test_get_server_by_uuid(self):
         req = fakes.HTTPRequestV3.blank('/servers/%s' % FAKE_UUID)
@@ -720,7 +721,7 @@ class ServersControllerTest(ControllerTest):
 
         req = fakes.HTTPRequestV3.blank('/servers?tenant_id=newfake')
         res = self.controller.index(req)
-        self.assertTrue('servers' in res)
+        self.assertIn('servers', res)
 
     def test_tenant_id_filter_implies_all_tenants(self):
         def fake_get_all(context, filters=None, sort_key=None,
@@ -742,7 +743,7 @@ class ServersControllerTest(ControllerTest):
         req = fakes.HTTPRequestV3.blank('/servers?tenant_id=newfake',
                                       use_admin_context=True)
         res = self.controller.index(req)
-        self.assertTrue('servers' in res)
+        self.assertIn('servers', res)
 
     def test_all_tenants_param_normal(self):
         def fake_get_all(context, filters=None, sort_key=None,
@@ -2128,8 +2129,8 @@ class ServersControllerCreateTest(test.TestCase):
 
         def create(*args, **kwargs):
             result = [('76fa36fc-c930-4bf3-8c8a-ea2a2420deb6', None,
-                       None)]
-            self.assertEqual(kwargs['requested_networks'], result)
+                       None, None)]
+            self.assertEqual(result, kwargs['requested_networks'].as_tuples())
             return old_create(*args, **kwargs)
 
         self.stubs.Set(compute_api.API, 'create', create)
@@ -2490,6 +2491,62 @@ class ServersControllerCreateTest(test.TestCase):
         self.stubs.Set(compute_api.API, 'create', fake_create)
         self.assertRaises(webob.exc.HTTPBadRequest,
                           self._test_create_extra, params)
+
+
+class ServersControllerCreateTestWithMock(test.TestCase):
+    image_uuid = '76fa36fc-c930-4bf3-8c8a-ea2a2420deb6'
+    flavor_ref = 'http://localhost/123/flavors/3'
+
+    def setUp(self):
+        """Shared implementation for tests below that create instance."""
+        super(ServersControllerCreateTestWithMock, self).setUp()
+
+        self.flags(verbose=True,
+                   enable_instance_password=True)
+        self.instance_cache_num = 0
+        self.instance_cache_by_id = {}
+        self.instance_cache_by_uuid = {}
+
+        ext_info = plugins.LoadedExtensionInfo()
+        self.controller = servers.ServersController(extension_info=ext_info)
+
+        self.body = {
+            'server': {
+                'name': 'server_test',
+                'image_ref': self.image_uuid,
+                'flavor_ref': self.flavor_ref,
+                'metadata': {
+                    'hello': 'world',
+                    'open': 'stack',
+                    },
+                },
+            }
+        self.req = fakes.HTTPRequest.blank('/fake/servers')
+        self.req.method = 'POST'
+        self.req.headers["content-type"] = "application/json"
+
+    def _test_create_extra(self, params, no_image=False):
+        self.body['server']['flavor_ref'] = 2
+        if no_image:
+            self.body['server'].pop('image_ref', None)
+        self.body['server'].update(params)
+        self.req.body = jsonutils.dumps(self.body)
+        self.req.headers["content-type"] = "application/json"
+        self.controller.create(self.req, body=self.body).obj['server']
+
+    @mock.patch.object(compute_api.API, 'create')
+    def test_create_instance_with_neutronv2_fixed_ip_already_in_use(self,
+            create_mock):
+        network = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+        address = '10.0.2.3'
+        requested_networks = [{'uuid': network, 'fixed-ip': address}]
+        params = {'networks': requested_networks}
+        create_mock.side_effect = exception.FixedIpAlreadyInUse(
+            address=address,
+            instance_uuid=network)
+        self.assertRaises(webob.exc.HTTPBadRequest,
+                          self._test_create_extra, params)
+        self.assertEqual(1, len(create_mock.call_args_list))
 
 
 class ServersViewBuilderTest(test.TestCase):

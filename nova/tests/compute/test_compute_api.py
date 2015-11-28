@@ -38,6 +38,7 @@ from nova.objects import instance as instance_obj
 from nova.objects import instance_info_cache
 from nova.objects import migration as migration_obj
 from nova.objects import quotas as quotas_obj
+from nova.objects import security_group as security_group_obj
 from nova.objects import service as service_obj
 from nova.openstack.common import timeutils
 from nova.openstack.common import uuidutils
@@ -187,6 +188,67 @@ class _ComputeAPIUnitTestMixIn(object):
                 self.assertEqual(message, e.kwargs['req'])
             else:
                 self.fail("Exception not raised")
+
+    """Icehouse without test case, ignore the case.
+    def test_specified_port_and_multiple_instances_neutronv2(self):
+        # Tests that if port is specified there is only one instance booting
+        # (i.e max_count == 1) as we can't share the same port across multiple
+        # instances.
+        self.mox.StubOutWithMock(self.compute_api, "_get_image")
+        image = {"min_ram": 10, "min_disk": 1,
+                 "properties": {'architecture': 'X86_64'}}
+        self.compute_api._get_image(self.context, 'image_href').AndReturn(
+                (0, image))
+        self.mox.ReplayAll()
+        self.flags(network_api_class='nova.network.neutronv2.api.API')
+        port = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+        address = '10.0.0.1'
+        min_count = 1
+        max_count = 2
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(address=address,
+                                            port_id=port)])
+
+        self.assertRaises(exception.MultiplePortsNotApplicable,
+            self.compute_api.create, self.context, 'fake_flavor', 'image_id',
+            min_count=min_count, max_count=max_count,
+            requested_networks=requested_networks)
+
+    def _test_specified_ip_and_multiple_instances_helper(self,
+                                                         requested_networks):
+        # Tests that if ip is specified there is only one instance booting
+        # (i.e max_count == 1)
+        min_count = 1
+        max_count = 2
+        self.assertRaises(exception.InvalidFixedIpAndMaxCountRequest,
+            self.compute_api.create, self.context, "fake_flavor", 'image_id',
+            min_count=min_count, max_count=max_count,
+            requested_networks=requested_networks)
+
+    def test_specified_ip_and_multiple_instances(self):
+        network = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+        address = '10.0.0.1'
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=network,
+                                            address=address)])
+        self._test_specified_ip_and_multiple_instances_helper(
+            requested_networks)
+
+    def test_specified_ip_and_multiple_instances_neutronv2(self):
+        image_href = "image_href"
+        image_id = 0
+        self.mox.StubOutWithMock(self.compute_api, "_get_image")
+        self.compute_api._get_image(self.context, image_href).AndReturn(
+                (image_id, {}))
+        self.mox.ReplayAll()
+        self.flags(network_api_class='nova.network.neutronv2.api.API')
+        network = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+        address = '10.0.0.1'
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(network_id=network,
+                                            address=address)])
+        self._test_specified_ip_and_multiple_instances_helper(
+            requested_networks)"""
 
     def test_suspend(self):
         # Ensure instance can be suspended.
@@ -2038,3 +2100,26 @@ class DiffDictTestCase(test.NoDBTestCase):
         diff = compute_api._diff_dict(old, new)
 
         self.assertEqual(diff, dict(b=['-']))
+
+
+class SecurityGroupAPITest(test.NoDBTestCase):
+    def setUp(self):
+        super(SecurityGroupAPITest, self).setUp()
+        self.secgroup_api = compute_api.SecurityGroupAPI()
+        self.user_id = 'fake'
+        self.project_id = 'fake'
+        self.context = context.RequestContext(self.user_id,
+                                              self.project_id)
+
+    @mock.patch('nova.objects.security_group.SecurityGroupList.'
+                'get_by_instance')
+    def test_get_instance_security_groups(self, mock_get):
+        groups = security_group_obj.SecurityGroupList()
+        groups.objects = [security_group_obj.SecurityGroup(name='foo'),
+                          security_group_obj.SecurityGroup(name='bar')]
+        mock_get.return_value = groups
+        names = self.secgroup_api.get_instance_security_groups(self.context,
+                                                               'fake-uuid')
+        self.assertEqual([{'name': 'bar'}, {'name': 'foo'}], sorted(names))
+        self.assertEqual(1, mock_get.call_count)
+        self.assertEqual('fake-uuid', mock_get.call_args_list[0][0][1].uuid)

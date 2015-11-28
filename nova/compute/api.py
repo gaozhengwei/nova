@@ -60,6 +60,7 @@ from nova.objects import instance_group as instance_group_obj
 from nova.objects import instance_info_cache
 from nova.objects import keypair as keypair_obj
 from nova.objects import migration as migration_obj
+from nova.objects import network_request as net_req_obj
 from nova.objects import quotas as quotas_obj
 from nova.objects import security_group as security_group_obj
 from nova.objects import service as service_obj
@@ -69,6 +70,7 @@ from nova.openstack.common import log as logging
 from nova.openstack.common import strutils
 from nova.openstack.common import timeutils
 from nova.openstack.common import uuidutils
+from nova.pci import pci_request
 import nova.policy
 from nova import quota
 from nova import rpc
@@ -460,6 +462,9 @@ class API(base.Base):
         and the fixed IP address for each network provided is within
         same the network block
         """
+        if requested_networks is not None:
+            # NOTE(danms): Temporary transition
+            requested_networks = requested_networks.as_tuples()
         return self.network_api.validate_networks(context, requested_networks,
                                                   max_count)
 
@@ -478,32 +483,39 @@ class API(base.Base):
     def _check_availability_zone_associate_network(self, context,
                                                    availability_zone,
                                                    requested_networks):
-        if not availability_zone and not requested_networks:
+        """Juno's requested_networks was encapsulated NetworkRequestList."""
+        req_nets = requested_networks.objects if requested_networks else []
+        if not availability_zone and not req_nets:
             return None, requested_networks
 
-        if not availability_zone and requested_networks:
-            networks = [net[0] for net in requested_networks]
+        if not availability_zone and req_nets:
+            networks = [net.network_id for net in req_nets]
             filter_azs = self._availability_zones_get_by_network(
                 context, networks)
             return filter_azs, requested_networks
 
-        if availability_zone and not requested_networks:
+        if availability_zone and not req_nets:
             associate_network = self._get_availability_zone_associate_network(
                 context, availability_zone)
             if associate_network:
-                requested_networks = []
                 for net in associate_network:
-                    requested_networks.append((net, None))
+                    if utils.is_neutron:
+                        req_nets.append(net_req_obj.NetworkRequest.from_tuple(
+                        [net, None, None]))
+                    else:
+                        req_nets.append(net_req_obj.NetworkRequest.from_tuple(
+                        [net, None]))
+                requested_networks = net_req_obj.NetworkRequestList(
+                objects=req_nets)
         else:
             associate_network = self._get_availability_zone_associate_network(
                 context, availability_zone)
             if associate_network:
-                for net in requested_networks:
-                    if net[0] not in associate_network:
+                for net in req_nets:
+                    if net.network_id not in associate_network:
                         reason = _("Input network %s is not associated with "
                                    "the availability zone.") % net[0]
                         raise exception.InvalidInput(reason=reason)
-
         return None, requested_networks
 
     @staticmethod
@@ -799,6 +811,17 @@ class API(base.Base):
         system_metadata = flavors.save_flavor_info(
             dict(), instance_type)
 
+        # PCI requests come from two sources: instance flavor and
+        # requested_networks. The first call in below returns an
+        # InstancePCIRequests object which is a list of InstancePCIRequest
+        # objects. The second call in below creates an InstancePCIRequest
+        # object for each SR-IOV port, and append it to the list in the
+        # InstancePCIRequests object
+        pci_request_info = pci_request.get_pci_requests_from_flavor(
+            instance_type)
+        self.network_api.create_pci_requests_for_sriov_ports(context,
+            pci_request_info, requested_networks)
+
         base_options = {
             'reservation_id': reservation_id,
             'image_ref': image_href,
@@ -826,6 +849,7 @@ class API(base.Base):
             'availability_zone': availability_zone,
             'root_device_name': root_device_name,
             'progress': 0,
+            'pci_request_info': pci_request_info,
             'system_metadata': system_metadata}
 
         options_from_image = self._inherit_properties_from_image(
@@ -838,13 +862,15 @@ class API(base.Base):
         return base_options, max_network_count
 
     def _build_filter_properties(self, context, scheduler_hints, forced_host,
-            forced_node, instance_type):
+            forced_node, instance_type, pci_request_info):
         filter_properties = dict(scheduler_hints=scheduler_hints)
         filter_properties['instance_type'] = instance_type
         if forced_host:
             filter_properties['force_hosts'] = [forced_host]
         if forced_node:
             filter_properties['force_nodes'] = [forced_node]
+        if pci_request_info and pci_request_info.requests:
+            filter_properties['pci_requests'] = pci_request_info
         return filter_properties
 
     def _provision_instances(self, context, instance_type, min_count,
@@ -863,7 +889,9 @@ class API(base.Base):
                         context, instance_type, boot_meta, instance,
                         security_groups, block_device_mapping,
                         num_instances, i)
-
+                pci_requests = base_options['pci_request_info']
+                pci_requests.instance_uuid = instance['uuid']
+                pci_requests.save(context)
                 instances.append(instance)
                 # send a state update notification for the initial create to
                 # show it going from non-existent to BUILDING
@@ -1001,6 +1029,9 @@ class API(base.Base):
         availability_zone, forced_host, forced_node = handle_az(context,
                                                             availability_zone)
 
+        filter_availability_zones, requested_networks = self.\
+            _check_availability_zone_associate_network(context,
+            availability_zone, requested_networks)
         base_options, max_net_count = self._validate_and_build_base_options(
                 context,
                 instance_type, boot_meta, image_href, image_id, kernel_id,
@@ -1023,10 +1054,6 @@ class API(base.Base):
                         'max_net_count': max_net_count})
             max_count = max_net_count
 
-        filter_availability_zones, requested_networks = \
-            self._check_availability_zone_associate_network(context,
-                availability_zone, requested_networks)
-
         block_device_mapping = self._check_and_transform_bdm(
             base_options, boot_meta, min_count, max_count,
             block_device_mapping, legacy_bdm)
@@ -1036,11 +1063,13 @@ class API(base.Base):
                 block_device_mapping)
 
         filter_properties = self._build_filter_properties(context,
-                scheduler_hints, forced_host, forced_node, instance_type)
+                scheduler_hints, forced_host,
+                forced_node, instance_type,
+                base_options.get('pci_request_info'))
 
-        if filter_availability_zones:
-            filter_properties['filter_availability_zones'] = \
-                filter_availability_zones
+        # if filter_availability_zones:
+        #    filter_properties['filter_availability_zones'] = \
+        #        filter_availability_zones
 
         self._update_instance_group(context, instances, scheduler_hints)
 
@@ -1048,6 +1077,9 @@ class API(base.Base):
             self._record_action_start(context, instance,
                                       instance_actions.CREATE)
 
+        if requested_networks is not None:
+            # NOTE(danms): Temporary transition
+            requested_networks = requested_networks.as_tuples()
         self.compute_task_api.build_instances(context,
                 instances=instances, image=boot_meta,
                 filter_properties=filter_properties,
@@ -1364,7 +1396,7 @@ class API(base.Base):
                   'availability_zone': availability_zone}
         check_policy(context, 'create', target)
 
-        if requested_networks:
+        if requested_networks and len(requested_networks):
             check_policy(context, 'create:attach_network', target)
 
         if block_device_mapping:
@@ -1372,12 +1404,21 @@ class API(base.Base):
 
     def _check_multiple_instances_neutron_ports(self, requested_networks):
         """Check whether multiple instances are created from port id(s)."""
-        for net, ip, port in requested_networks:
-            if port:
+        for requested_net in requested_networks:
+            if requested_net.port_id:
                 msg = _("Unable to launch multiple instances with"
                         " a single configured port ID. Please launch your"
                         " instance one by one with different ports.")
                 raise exception.MultiplePortsNotApplicable(reason=msg)
+
+    def _check_multiple_instances_and_specified_ip(self, requested_networks):
+        """Check whether multiple instances are created with specified ip."""
+
+        for requested_net in requested_networks:
+            if requested_net.network_id and requested_net.address:
+                msg = _("max_count cannot be greater than 1 if an fixed_ip "
+                        "is specified.")
+                raise exception.InvalidFixedIpAndMaxCountRequest(reason=msg)
 
     @hooks.add_hook("create_instance")
     def create(self, context, instance_type,
@@ -4005,11 +4046,10 @@ class SecurityGroupAPI(base.Base, security_group_base.SecurityGroupBase):
         if detailed:
             return self.db.security_group_get_by_instance(context,
                                                           instance_uuid)
-        instance = self.db.instance_get_by_uuid(context, instance_uuid)
-        groups = instance.get('security_groups')
-        if groups:
-            return [{'name': group['name']} for group in groups]
-        return []
+        instance = instance_obj.Instance(uuid=instance_uuid)
+        groups = security_group_obj.SecurityGroupList.get_by_instance(context,
+                                                                      instance)
+        return [{'name': group.name} for group in groups]
 
     def populate_security_groups(self, instance, security_groups):
         if not security_groups:

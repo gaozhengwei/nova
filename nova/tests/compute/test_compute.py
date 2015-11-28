@@ -59,6 +59,7 @@ from nova.objects import block_device as block_device_obj
 from nova.objects import instance as instance_obj
 from nova.objects import instance_group as instance_group_obj
 from nova.objects import migration as migration_obj
+from nova.objects import network_request as net_req_obj
 from nova.objects import quotas as quotas_obj
 from nova.openstack.common.gettextutils import _
 from nova.openstack.common import importutils
@@ -1260,13 +1261,15 @@ class ComputeTestCase(BaseTestCase):
         def fake_is_neutron():
             return True
         self.stubs.Set(utils, 'is_neutron', fake_is_neutron)
+        requested_networks = net_req_obj.NetworkRequestList(
+            objects=[net_req_obj.NetworkRequest(port_id='adadds')])
         self.assertRaises(exception.MultiplePortsNotApplicable,
                           self.compute_api.create,
                           self.context,
                           instance_type=instance_type,
                           image_href=None,
                           max_count=2,
-                          requested_networks=[(None, None, 'adadds')])
+                          requested_networks=requested_networks)
 
     def test_create_instance_with_oversubscribed_ram(self):
         # Test passing of oversubscribed ram policy from the scheduler.
@@ -4951,11 +4954,15 @@ class ComputeTestCase(BaseTestCase):
         if revert:
             flavors.extract_flavor(instance, 'old_').AndReturn(
                 {'instance_type_id': old})
+            flavors.extract_flavor(instance).AndReturn(
+                {'instance_type_id': new})
             flavors.save_flavor_info(
                 sys_meta, {'instance_type_id': old}).AndReturn(sys_meta)
         else:
             flavors.extract_flavor(instance).AndReturn(
                 {'instance_type_id': new})
+            flavors.extract_flavor(instance, 'old_').AndReturn(
+                {'instance_type_id': old})
         flavors.delete_flavor_info(
             sys_meta, 'old_').AndReturn(sys_meta)
         flavors.delete_flavor_info(
@@ -4966,7 +4973,8 @@ class ComputeTestCase(BaseTestCase):
                                                           revert)
         self.assertEqual(res,
                          (sys_meta,
-                          {'instance_type_id': revert and old or new}))
+                          {'instance_type_id': revert and old or new},
+                          {'instance_type_id': revert and new or old}))
 
     def test_cleanup_stored_instance_types_for_resize(self):
         self._test_cleanup_stored_instance_types('1', '2')
@@ -5430,8 +5438,8 @@ class ComputeTestCase(BaseTestCase):
         self.assertEqual(msg.event_type,
                          'compute.instance.live_migration.post.dest.end')
 
-        return self.compute.conductor_api.instance_get_by_uuid(self.admin_ctxt,
-                                                        self.instance['uuid'])
+        return instance_obj.Instance.get_by_uuid(self.admin_ctxt,
+                                            self.instance['uuid'])
 
     def test_post_live_migration_at_destination_with_compute_info(self):
         """The instance's node property should be updated correctly."""
@@ -5551,8 +5559,7 @@ class ComputeTestCase(BaseTestCase):
         exc_info = None
 
         def fake_db_fault_create(ctxt, values):
-            self.assertTrue('raise messaging.RemoteError'
-                in values['details'])
+            self.assertIn('raise messaging.RemoteError', values['details'])
             del values['details']
 
             expected = {

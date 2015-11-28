@@ -1633,6 +1633,8 @@ def instance_create(context, values):
     # create the instance uuid to ec2_id mapping entry for instance
     ec2_instance_create(context, instance_ref['uuid'])
 
+    _instance_extra_create(context, {'instance_uuid': instance_ref['uuid']})
+
     return instance_ref
 
 
@@ -1680,6 +1682,9 @@ def instance_destroy(context, instance_uuid, constraint=None):
                 filter_by(instance_uuid=instance_uuid).\
                 soft_delete()
         model_query(context, models.InstanceFault, session=session).\
+                filter_by(instance_uuid=instance_uuid).\
+                soft_delete()
+        model_query(context, models.InstanceExtra, session=session).\
                 filter_by(instance_uuid=instance_uuid).\
                 soft_delete()
     return instance_ref
@@ -2383,6 +2388,34 @@ def instance_info_cache_delete(context, instance_uuid):
 
 
 ###################
+
+
+def _instance_extra_create(context, values):
+    inst_extra_ref = models.InstanceExtra()
+    inst_extra_ref.update(values)
+    inst_extra_ref.save()
+    return inst_extra_ref
+
+
+def instance_extra_update_by_uuid(context, instance_uuid, values):
+    return model_query(context, models.InstanceExtra).\
+        filter_by(instance_uuid=instance_uuid).\
+        update(values)
+
+
+def _instance_extra_get_by_instance_uuid_query(context, instance_uuid):
+    return (model_query(context, models.InstanceExtra)
+                         .filter_by(instance_uuid=instance_uuid))
+
+
+def instance_extra_get_by_instance_uuid(context, instance_uuid):
+    query = _instance_extra_get_by_instance_uuid_query(
+        context, instance_uuid)
+    instance_extra = query.first()
+    return instance_extra
+
+
+##################
 
 
 @require_context
